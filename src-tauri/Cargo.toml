@@ -1,0 +1,36 @@
+[package]
+name = "voidesk"
+version = "0.1.0"
+description = "High-performance AI IDE"
+authors = ["VoiDesk Team"]
+edition = "2021"
+
+[lib]
+name = "voidesk_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures-util = "0.3"
+futures = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# ADK-Rust dependencies
+adk-rust = { version = "0.2", features = ["openai"] }
+adk-agent = "0.2"
+adk-core = "0.2"
+adk-model = { version = "0.2", features = ["openai"] }
+adk-tool = "0.2"
+adk-runner = "0.2"
+adk-session = "0.2"
+schemars = "0.8"
+anyhow = "1"

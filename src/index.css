@@ -1,0 +1,419 @@
+@import "tailwindcss";
+
+/* ============================================
+   VoiDesk - AI IDE Design System
+   A sophisticated dark-mode-first IDE theme
+   ============================================ */
+
+@theme {
+  /* Color Palette - Deep space inspired */
+  --color-void-950: #050508;
+  --color-void-900: #0a0a0f;
+  --color-void-850: #0d0d14;
+  --color-void-800: #11111a;
+  --color-void-700: #1a1a26;
+  --color-void-600: #252533;
+  --color-void-500: #3a3a4d;
+  --color-void-400: #5c5c73;
+  --color-void-300: #8585a3;
+  --color-void-200: #b3b3cc;
+  --color-void-100: #e0e0eb;
+  --color-void-50: #f5f5fa;
+
+  /* Accent Colors - Ethereal glow */
+  --color-accent-primary: #6366f1;
+  --color-accent-secondary: #8b5cf6;
+  --color-accent-tertiary: #ec4899;
+  --color-accent-success: #10b981;
+  --color-accent-warning: #f59e0b;
+  --color-accent-error: #ef4444;
+  --color-accent-info: #06b6d4;
+
+  /* Surface Colors */
+  --color-surface-base: var(--color-void-900);
+  --color-surface-elevated: var(--color-void-850);
+  --color-surface-overlay: var(--color-void-800);
+  --color-surface-sunken: var(--color-void-950);
+
+  /* Border Colors */
+  --color-border-subtle: rgb(255 255 255 / 0.06);
+  --color-border-default: rgb(255 255 255 / 0.1);
+  --color-border-strong: rgb(255 255 255 / 0.15);
+  --color-border-accent: var(--color-accent-primary);
+
+  /* Text Colors */
+  --color-text-primary: var(--color-void-50);
+  --color-text-secondary: var(--color-void-300);
+  --color-text-tertiary: var(--color-void-400);
+  --color-text-muted: var(--color-void-500);
+
+  /* Typography */
+  --font-sans: 'SF Pro Display', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+
+  /* Spacing */
+  --spacing-panel: 12px;
+  --spacing-gap: 8px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.5);
+  --shadow-glow: 0 0 20px rgb(99 102 241 / 0.15);
+
+  /* Animations */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-expo: cubic-bezier(0.87, 0, 0.13, 1);
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-surface-base);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-void-600);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-void-500);
+}
+
+/* Selection */
+::selection {
+  background: rgb(99 102 241 / 0.3);
+}
+
+/* Focus Ring */
+:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   Component Utilities
+   ============================================ */
+
+.panel {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-gap) var(--spacing-panel);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-btn:hover {
+  background: var(--color-void-700);
+  color: var(--color-text-primary);
+}
+
+.icon-btn:active {
+  transform: scale(0.95);
+}
+
+/* ============================================
+   File Tree Styles
+   ============================================ */
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.1s ease;
+  user-select: none;
+}
+
+.file-item:hover {
+  background: var(--color-void-700);
+  color: var(--color-text-primary);
+}
+
+.file-item.selected {
+  background: rgb(99 102 241 / 0.15);
+  color: var(--color-text-primary);
+}
+
+.file-item.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-accent-primary);
+}
+
+/* ============================================
+   Editor Tab Styles
+   ============================================ */
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  background: var(--color-void-800);
+  color: var(--color-text-secondary);
+}
+
+.tab.active {
+  color: var(--color-text-primary);
+  border-bottom-color: var(--color-accent-primary);
+  background: var(--color-void-800);
+}
+
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  opacity: 0;
+  transition: all 0.1s ease;
+}
+
+.tab:hover .tab-close {
+  opacity: 0.6;
+}
+
+.tab-close:hover {
+  opacity: 1;
+  background: var(--color-void-600);
+}
+
+/* ============================================
+   Status Bar
+   ============================================ */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 12px;
+  background: var(--color-surface-sunken);
+  border-top: 1px solid var(--color-border-subtle);
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.status-item:hover {
+  color: var(--color-text-secondary);
+}
+
+/* ============================================
+   CodeMirror Overrides
+   ============================================ */
+
+.cm-editor {
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cm-editor .cm-scroller {
+  overflow: auto;
+}
+
+.cm-editor .cm-gutters {
+  background: var(--color-surface-elevated);
+  border-right: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+}
+
+.cm-editor .cm-activeLineGutter {
+  background: var(--color-void-700);
+  color: var(--color-text-secondary);
+}
+
+.cm-editor .cm-activeLine {
+  background: rgb(255 255 255 / 0.03);
+}
+
+.cm-editor .cm-cursor {
+  border-left-color: var(--color-accent-primary);
+  border-left-width: 2px;
+}
+
+.cm-editor .cm-selectionBackground {
+  background: rgb(99 102 241 / 0.25) !important;
+}
+
+.cm-editor.cm-focused .cm-selectionBackground {
+  background: rgb(99 102 241 / 0.3) !important;
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s var(--ease-out-expo);
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s var(--ease-out-expo);
+}
+
+.animate-pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* ============================================
+   Resizer Handles
+   ============================================ */
+
+.resize-handle {
+  position: relative;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  background: var(--color-accent-primary);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.resize-handle:hover::after,
+.resize-handle:active::after {
+  opacity: 1;
+}
+
+.resize-handle-vertical {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.resize-handle-vertical::after {
+  left: 1px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+}
+
+.resize-handle-horizontal {
+  height: 4px;
+  cursor: row-resize;
+}
+
+.resize-handle-horizontal::after {
+  top: 1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
