@@ -5,10 +5,9 @@
 
 use adk_agent::LlmAgentBuilder;
 use adk_core::Content;
-use adk_model::openai::{OpenAIClient, OpenAICompatibleProvider};
+use adk_model::openai::OpenAIClient;
 use adk_runner::{Runner, RunnerConfig};
 use adk_session::{CreateRequest, InMemorySessionService, SessionService};
-use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -35,44 +34,80 @@ impl AIService {
         api_key: &str,
         base_url: &str,
         model_id: &str,
+        active_path: Option<&str>,
     ) -> Result<adk_agent::LlmAgent, String> {
-        // Build the API base URL - adk-rust expects base without /v1
-        let api_base = if base_url.ends_with("/v1") {
-            base_url.trim_end_matches("/v1").to_string()
-        } else if base_url.ends_with("/v1/") {
-            base_url.trim_end_matches("/v1/").to_string()
-        } else {
+        // Build the OpenAI config
+        // For OpenRouter/custom providers, we need to set a custom base URL
+        // adk-rust expects base URL ending with /v1
+        let api_base = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
             base_url.trim_end_matches('/').to_string()
+        } else {
+            format!("{}/v1", base_url.trim_end_matches('/'))
         };
 
-        // Create OpenAI-compatible model (works with OpenRouter, local servers, etc.)
-        let model = OpenAIClient::compatible(OpenAICompatibleProvider {
-            api_key: api_key.to_string(),
-            api_base,
-            model: model_id.to_string(),
-        })
-        .map_err(|e| format!("Failed to create model: {}", e))?;
+        // Create OpenAI-compatible model using the 3-argument compatible method
+        // arguments: api_key, api_base, model_id
+        let model = OpenAIClient::compatible(api_key, &api_base, model_id)
+            .map_err(|e| format!("Failed to create model: {}", e))?;
 
-        // Get all available tools
-        let tools = ai_tools::get_all_tools();
+        // Get all available tools, restricted to active_path
+        let tools = ai_tools::get_all_tools(active_path);
 
         // Build the agent with tools
         let mut builder = LlmAgentBuilder::new("voidesk_assistant")
             .description("VoiDesk AI IDE Assistant")
             .instruction(
-                r#"You are VoiDesk, a high-performance AI IDE assistant. You help developers with:
-- Reading and understanding code
-- Writing and modifying files
-- Running shell commands for builds, tests, and git operations
-- Explaining concepts and debugging issues
+                r#"You are VoiDesk, an intelligent AI coding assistant integrated into a professional IDE.
 
-Be helpful, concise, and accurate. When modifying code, explain what you're changing and why.
-Use the available tools when needed to interact with the file system or run commands.
+## YOUR CAPABILITIES
 
-Always prefer to:
-1. Read files before modifying them to understand the context
-2. Explain your changes before making them
-3. Run tests after making changes when appropriate"#,
+You have direct access to the user's project through these tools:
+- **read_file(path)**: Read any file in the project to understand code, configs, or data
+- **write_file(path, content)**: Create new files or overwrite existing ones
+- **list_directory(path)**: Explore the project structure
+- **run_command(command)**: Execute shell commands (npm, git, cargo, etc.)
+
+## CORE PRINCIPLES
+
+1. **ALWAYS USE TOOLS PROACTIVELY** - Don't just talk about code, actually read and modify it
+2. **Verify before acting** - Read files before editing to understand context
+3. **Show your work** - Explain what you're doing and why
+4. **Be precise** - Use exact file paths, never make assumptions
+
+## WORKFLOW EXAMPLES
+
+**When asked to "add a feature":**
+1. Use `list_directory` to understand project structure
+2. Use `read_file` to examine relevant files
+3. Use `write_file` to make changes
+4. Use `run_command` to test if appropriate
+
+**When asked to "fix a bug":**
+1. Use `read_file` to see the problematic code
+2. Analyze and explain the issue
+3. Use `write_file` to apply the fix
+4. Suggest testing with `run_command`
+
+**When asked "what does X do":**
+1. Use `read_file` to examine the code
+2. Provide a detailed explanation based on actual content
+
+## IMPORTANT RULES
+
+- Paths should be relative to the project root (e.g., "src/main.rs", not "/absolute/path")
+- Always read before writing to avoid breaking existing code
+- After file operations, confirm what you did ("Created src/new_file.rs with...")
+- If you're unsure about project structure, use `list_directory` first
+- For multi-file changes, tackle one file at a time and explain each step
+
+## RESPONSE STYLE
+
+- Be direct and technical
+- Use markdown code blocks for code snippets
+- Highlight important operations in your explanations
+- If you use a tool, mention it explicitly ("I'll read the file to check...")
+
+Remember: You're not just a chatbot - you're a hands-on coding partner with actual file system access. Use it!"#,
             )
             .model(Arc::new(model));
 
