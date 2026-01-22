@@ -177,14 +177,11 @@ tokio = { version = "1", features = ["full"] }
 
 ### OpenAI-Compatible Provider (OpenRouter)
 ```rust
-use adk_model::openai::{OpenAIClient, OpenAICompatibleProvider};
+use adk_model::openai::OpenAIClient;
 
 // For OpenRouter or any OpenAI-compatible API
-let model = OpenAIClient::compatible(OpenAICompatibleProvider {
-    api_key: "your-api-key".to_string(),
-    api_base: "https://openrouter.ai/api".to_string(),  // NO /v1
-    model: "mistralai/devstral-2512:free".to_string(),
-})?;
+// The compatible method takes 3 arguments: api_key, api_base, model_id
+let model = OpenAIClient::compatible(api_key, &api_base, model_id)?;
 ```
 
 ### Agent with Tools Pattern
@@ -327,7 +324,7 @@ void-desk/
 
 ## Important Notes
 
-1. **OpenRouter Compatibility**: adk-rust supports custom base URLs via `OpenAIClient::compatible()` - use string model IDs
+1. **OpenRouter Compatibility**: adk-rust supports custom base URLs via `OpenAIClient::compatible(key, base, model)`
 2. **Streaming**: Use `runner.run()` which returns a stream, iterate with `stream.next().await`
 3. **Tool Schema**: Derive `JsonSchema` for tool args, use `/// doc comments` for parameter descriptions
 4. **Session Required**: Always create a session before running the agent
