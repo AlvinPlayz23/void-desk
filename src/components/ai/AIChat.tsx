@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, ChevronDown, ChevronRight, RotateCcw, Zap, Activity, HardDrive, Search, SquareTerminal, X, File as FileIcon } from "lucide-react";
+import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -9,8 +9,8 @@ import { ToolOperation, useChatStore } from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
 
 export function AIChat() {
-    const { messages, isStreaming, sendMessage, retryLastMessage, stopStreaming, setMessages } = useAI();
-    const { contextPaths, removeContextPath, clearContextPaths } = useChatStore();
+    const { messages, isStreaming, sendMessage, stopStreaming, setMessages } = useAI();
+    const { contextPaths, removeContextPath } = useChatStore();
     const toggleSettings = useUIStore((state) => state.toggleSettings);
 
     const [input, setInput] = useState("");
@@ -236,67 +236,27 @@ function MarkdownContent({ content }: { content: string }) {
 }
 
 function ToolOperationDisplay({ operations }: { operations: ToolOperation[] }) {
-    const [isExpanded, setIsExpanded] = useState(false);
-
     if (!operations || operations.length === 0) return null;
 
-    const activeOperations = operations.filter(op => op.status === "started");
-    const isWorking = activeOperations.length > 0;
-    const topOp = isWorking ? activeOperations[activeOperations.length - 1] : operations[operations.length - 1];
-
-    const getIcon = (op: string) => {
-        const lower = op.toLowerCase();
-        if (lower.includes('read')) return <Search className="w-3.5 h-3.5" />;
-        if (lower.includes('write')) return <HardDrive className="w-3.5 h-3.5" />;
-        return <SquareTerminal className="w-3.5 h-3.5" />;
+    // Get unique operations (already merged by the store)
+    const getStatusIcon = (status: string) => {
+        if (status === "started") return <Loader2 className="w-3 h-3 animate-spin text-[var(--color-text-tertiary)]" />;
+        if (status === "completed") return <Activity className="w-3 h-3 text-[var(--color-accent-success)]" />;
+        return <Activity className="w-3 h-3 text-[var(--color-accent-error)]" />;
     };
 
     return (
-        <div className="mb-4 -mx-1">
-            <div
-                onClick={() => setIsExpanded(!isExpanded)}
-                className={`cursor-pointer rounded-lg border transition-all duration-300 ${isWorking
-                    ? "bg-white/[0.03] border-[var(--color-accent-primary)]/40 shadow-[0_0_15px_rgba(99,102,241,0.1)]"
-                    : "bg-black/20 border-white/5 overflow-hidden shadow-inner"
-                    }`}
-            >
-                <div className="flex items-center justify-between px-3 py-2 bg-white/[0.02] border-b border-white/5">
-                    <div className="flex items-center gap-2.5">
-                        <Activity className={`w-3 h-3 ${isWorking ? 'text-blue-400 animate-pulse' : 'text-emerald-500/50'}`} />
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-60">System Log</span>
-                    </div>
-                    {isExpanded ? <ChevronDown className="w-3 h-3 opacity-30" /> : <ChevronRight className="w-3 h-3 opacity-30" />}
+        <div className="mb-3 space-y-1">
+            {operations.map((op, i) => (
+                <div
+                    key={`${op.operation}-${op.target}-${i}`}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/[0.02] border border-white/5 text-[10px]"
+                >
+                    {getStatusIcon(op.status)}
+                    <span className="font-medium text-[var(--color-text-secondary)] truncate">{op.operation}</span>
+                    <span className="text-[var(--color-text-muted)] truncate flex-1">{op.target.split(/[/\\]/).pop()}</span>
                 </div>
-                {!isExpanded && (
-                    <div className="px-3 py-2 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5 truncate">
-                            <div className="opacity-40">{getIcon(topOp.operation)}</div>
-                            <span className="text-[11px] font-bold tracking-tight truncate">{topOp.operation}</span>
-                        </div>
-                        {isWorking && (
-                            <div className="flex gap-0.5 items-center">
-                                {[1, 2, 3].map(i => (
-                                    <div key={i} className="w-0.5 h-2 bg-[var(--color-accent-primary)] rounded-full animate-pulse" style={{ animationDelay: `${i * 0.2}s` }} />
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-                {isExpanded && (
-                    <div className="p-2.5 space-y-2 bg-black/20">
-                        {operations.map((op, i) => (
-                            <div key={i} className="flex flex-col gap-1.5 p-2.5 rounded bg-white/[0.02] border border-white/5">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[9px] font-black uppercase tracking-widest">{op.operation}</span>
-                                    <span className={`text-[8px] px-1.5 py-0.5 rounded border ${op.status === 'completed' ? 'border-emerald-500/20 text-emerald-400' : 'border-blue-500/20 text-blue-400'
-                                        }`}>{op.status.toUpperCase()}</span>
-                                </div>
-                                <div className="text-[9px] font-mono opacity-30 truncate">{op.target}</div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+            ))}
         </div>
     );
 }

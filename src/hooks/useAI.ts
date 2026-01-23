@@ -44,6 +44,31 @@ export function useAI() {
 
             setIsStreaming(true);
 
+            // Get context from attached files
+            const contextPaths = useChatStore.getState().contextPaths;
+            let contextContent = "";
+
+            if (contextPaths.length > 0) {
+                const contextParts: string[] = [];
+                for (const path of contextPaths) {
+                    try {
+                        const content = await invoke<string>("read_file", { path });
+                        const fileName = path.split(/[/\\]/).pop() || path;
+                        contextParts.push(`--- File: ${fileName} ---\n${content}`);
+                    } catch (err) {
+                        console.warn("Could not read context file:", path, err);
+                    }
+                }
+                if (contextParts.length > 0) {
+                    contextContent = "\n\n[Attached Context Files]\n" + contextParts.join("\n\n");
+                }
+                // Clear context paths after use
+                useChatStore.getState().clearContextPaths();
+            }
+
+            // Combine user message with context
+            const fullMessage = text + contextContent;
+
             try {
                 const onEvent = new Channel<AIResponseChunk>();
 
@@ -92,7 +117,7 @@ export function useAI() {
                 };
 
                 await invoke("ask_ai_stream", {
-                    message: text,
+                    message: fullMessage,
                     apiKey: openAIKey,
                     baseUrl: openAIBaseUrl,
                     modelId: openAIModelId,

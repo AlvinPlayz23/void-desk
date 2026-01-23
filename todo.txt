@@ -1,3 +1,4 @@
-1.drag and drop files to folders and vice versa in file explorer
-1.refine the ui of tool indicators and the started stage and completed stage should be merged, where once a tool is started after its finish replace it with a completed one or if it 
-
+d&d still not working
+@ fixed but when message sent there is no ui showing that context is added...
+started and complete tool indicator 
+still its not live explorer (have to press refresh)

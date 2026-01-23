@@ -37,11 +37,18 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
     const menuRef = useRef<HTMLDivElement>(null);
 
     const handleDragStart = (e: React.DragEvent) => {
+        e.stopPropagation();
         console.log("Drag start:", node.path);
         e.dataTransfer.setData("text/plain", node.path);
         e.dataTransfer.effectAllowed = "move";
-        // Ensure the ghost image is visible
-        e.dataTransfer.setDragImage(e.currentTarget, 0, 0);
+    };
+
+    const handleDragEnter = (e: React.DragEvent) => {
+        if (node.isDir) {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragOver(true);
+        }
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -49,42 +56,41 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
             e.preventDefault();
             e.stopPropagation();
             e.dataTransfer.dropEffect = "move";
-            if (!isDragOver) setIsDragOver(true);
         }
     };
 
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        // Only remove highlight if we're actually leaving the item (not entering a child)
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+        // Check if we're leaving to a non-child element
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
             setIsDragOver(false);
         }
     };
 
     const handleDrop = async (e: React.DragEvent) => {
-        if (node.isDir) {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsDragOver(false);
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
 
-            const sourcePath = e.dataTransfer.getData("text/plain");
-            console.log("Drop detected. Source:", sourcePath, "Target Dir:", node.path);
+        if (!node.isDir) return;
 
-            if (sourcePath && sourcePath !== node.path) {
-                // Ensure we handle both / and \ for Windows compatibility
-                const parts = sourcePath.split(/[/\\]/);
-                const fileName = parts.pop() || "";
+        const sourcePath = e.dataTransfer.getData("text/plain");
+        console.log("Drop detected. Source:", sourcePath, "Target Dir:", node.path);
 
-                // Use the correct separator based on the existing path
-                const separator = node.path.includes('\\') ? '\\' : '/';
-                const targetPath = `${node.path}${separator}${fileName}`;
+        if (sourcePath && sourcePath !== node.path && !sourcePath.startsWith(node.path)) {
+            const parts = sourcePath.split(/[/\\]/);
+            const fileName = parts.pop() || "";
+            const separator = node.path.includes('\\') ? '\\' : '/';
+            const targetPath = `${node.path}${separator}${fileName}`;
 
-                console.log("Moving to:", targetPath);
-                const success = await moveItem(sourcePath, targetPath);
-                if (!success) {
-                    console.error("Move failed from", sourcePath, "to", targetPath);
-                }
+            console.log("Moving to:", targetPath);
+            const success = await moveItem(sourcePath, targetPath);
+            if (!success) {
+                console.error("Move failed from", sourcePath, "to", targetPath);
             }
         }
     };
@@ -180,6 +186,7 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
             <div
                 draggable
                 onDragStart={handleDragStart}
+                onDragEnter={handleDragEnter}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
