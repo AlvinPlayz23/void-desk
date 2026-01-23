@@ -1,14 +1,17 @@
+use super::utils::validate_path;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
 #[tauri::command]
 pub async fn read_file(path: String) -> Result<String, String> {
+    validate_path(&path)?;
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn write_file(path: String, content: String) -> Result<(), String> {
+    validate_path(&path)?;
     // Create parent directories if they don't exist
     if let Some(parent) = Path::new(&path).parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -18,6 +21,7 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn delete_file(path: String) -> Result<(), String> {
+    validate_path(&path)?;
     let path = Path::new(&path);
     if path.is_dir() {
         fs::remove_dir_all(path).map_err(|e| e.to_string())
@@ -28,11 +32,14 @@ pub async fn delete_file(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn create_directory(path: String) -> Result<(), String> {
+    validate_path(&path)?;
     fs::create_dir_all(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn move_file(from: String, to: String) -> Result<(), String> {
+    validate_path(&from)?;
+    validate_path(&to)?;
     fs::rename(from, to).map_err(|e| e.to_string())
 }
 
@@ -42,6 +49,7 @@ pub async fn move_file(from: String, to: String) -> Result<(), String> {
 /// Linux: opens the parent directory with xdg-open
 #[tauri::command]
 pub async fn reveal_in_file_explorer(path: String) -> Result<(), String> {
+    validate_path(&path)?;
     let path = Path::new(&path);
 
     if !path.exists() {

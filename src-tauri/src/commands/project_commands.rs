@@ -1,3 +1,4 @@
+use super::utils::validate_path;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -20,6 +21,7 @@ pub struct FileNode {
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
+    validate_path(&path)?;
     let dir_path = Path::new(&path);
 
     if !dir_path.is_dir() {
@@ -65,6 +67,7 @@ pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
 
 #[tauri::command]
 pub async fn get_project_tree(path: String, max_depth: usize) -> Result<Vec<FileNode>, String> {
+    validate_path(&path)?;
     fn build_tree(
         dir_path: &Path,
         current_depth: usize,
