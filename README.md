@@ -64,12 +64,22 @@ VoiDesk is a lightweight, blazingly fast code editor built with **Tauri 2.0** an
     npm run tauri build
     ```
 
+## 🆕 Recent Updates
+
+- **Multi-Language Syntax Highlighting**: Full support for JavaScript, TypeScript, Python, Rust, HTML, CSS, JSON, and Markdown
+- **File Watching**: The file tree now auto-refreshes when files are modified, created, or deleted outside the IDE
+- **Find & Replace**: Press `Ctrl+F` to find in file, `Ctrl+H` for find & replace (supports regex and case-sensitive search)
+- **Improved Drag & Drop**: Move files between folders or back to the workspace root with visual feedback
+
 ## 🗺️ Roadmap
 
 - [x] Core Editor & File System
 - [x] AI Chat & Context System
 - [x] Integrated Terminal
-- [ ] LSP Integration (Language Server Protocol)
+- [x] File Watching & Auto-Refresh
+- [x] Find & Replace
+- [x] Multi-Language Syntax Highlighting
+- [ ] LSP Integration (Language Server Protocol) - [See Plan](./LSP-PLAN.md)
 - [ ] Git Integration
 - [ ] Plugin System
 

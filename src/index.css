@@ -254,8 +254,52 @@ body {
 }
 
 .file-item.drag-over {
+  background: rgb(99 102 241 / 0.15);
+  box-shadow: inset 0 0 0 2px var(--color-accent-primary);
+  border-radius: var(--radius-sm);
+}
+
+/* Folder drop target indicator */
+.file-item.drag-over::after {
+  content: 'Drop here';
+  position: absolute;
+  right: 8px;
+  font-size: 0.65rem;
+  color: var(--color-accent-primary);
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+/* File tree container */
+.file-tree-container {
+  min-height: 100%;
+}
+
+/* Root drop zone styling */
+.root-drop-zone-active {
+  background: rgb(99 102 241 / 0.05);
+  box-shadow: inset 0 0 0 2px rgb(99 102 241 / 0.3);
+  border-radius: var(--radius-sm);
+}
+
+.root-drop-zone-active::before {
+  content: 'Drop to move to root';
+  display: block;
+  text-align: center;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 0.7rem;
+  color: var(--color-accent-primary);
   background: rgb(99 102 241 / 0.1);
-  box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+/* Dragging state for source item */
+.file-item.dragging,
+.file-item[draggable="true"]:active {
+  opacity: 0.5;
+  background: rgb(99 102 241 / 0.1);
 }
 
 /* ============================================
@@ -375,6 +419,61 @@ body {
 
 .cm-editor.cm-focused .cm-selectionBackground {
   background: rgb(99 102 241 / 0.3) !important;
+}
+
+/* ============================================
+   CodeMirror Search Panel Styles
+   ============================================ */
+
+.cm-search {
+  background: var(--color-void-800) !important;
+  border-bottom: 1px solid var(--color-border-subtle) !important;
+  padding: 8px 12px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+}
+
+.cm-search input,
+.cm-search button {
+  background: var(--color-void-900) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+  color: var(--color-text-primary) !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+}
+
+.cm-search input:focus {
+  border-color: var(--color-accent-primary) !important;
+  outline: none !important;
+}
+
+.cm-search button:hover {
+  background: var(--color-void-700) !important;
+}
+
+.cm-search button[name="close"] {
+  background: transparent !important;
+  border: none !important;
+}
+
+.cm-search label {
+  color: var(--color-text-secondary) !important;
+  font-size: 11px !important;
+}
+
+.cm-searchMatch {
+  background: rgba(99, 102, 241, 0.3) !important;
+  border-radius: 2px;
+}
+
+.cm-searchMatch-selected {
+  background: rgba(99, 102, 241, 0.6) !important;
+}
+
+/* Highlight other occurrences of selected text */
+.cm-selectionMatch {
+  background: rgba(255, 255, 255, 0.1) !important;
 }
 
 /* ============================================

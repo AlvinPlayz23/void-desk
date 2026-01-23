@@ -5,9 +5,10 @@ import { FileItem } from "./FileItem";
 interface FileTreeProps {
     nodes: FileNode[];
     depth: number;
+    rootPath?: string;
 }
 
-export function FileTree({ nodes, depth }: FileTreeProps) {
+export function FileTree({ nodes, depth, rootPath }: FileTreeProps) {
     const { toggleFolder } = useFileStore();
     const { openFileInEditor } = useFileSystem();
 
@@ -20,8 +21,17 @@ export function FileTree({ nodes, depth }: FileTreeProps) {
         }
     };
 
+    // Prevent drag events from bubbling to parent (root drop zone) when over file items
+    const handleDragOver = (e: React.DragEvent) => {
+        // Let events bubble up if not over a specific item
+        // The individual FileItems will stop propagation when appropriate
+    };
+
     return (
-        <div className="animate-fade-in">
+        <div
+            className="animate-fade-in file-tree-container"
+            onDragOver={handleDragOver}
+        >
             {nodes.map((node) => (
                 <div key={node.path}>
                     <FileItem
@@ -30,7 +40,7 @@ export function FileTree({ nodes, depth }: FileTreeProps) {
                         onClick={() => handleClick(node)}
                     />
                     {node.isDir && node.isExpanded && node.children && (
-                        <FileTree nodes={node.children} depth={depth + 1} />
+                        <FileTree nodes={node.children} depth={depth + 1} rootPath={rootPath} />
                     )}
                 </div>
             ))}

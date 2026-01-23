@@ -13,9 +13,10 @@ import {
 
 export function Sidebar() {
     const { fileTree, rootPath } = useFileStore();
-    const { openFolder, refreshFileTree, createNewFile, createNewFolder } = useFileSystem();
+    const { openFolder, refreshFileTree, createNewFile, createNewFolder, moveItem } = useFileSystem();
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [isRootDragOver, setIsRootDragOver] = useState(false);
 
     const handleOpenFolder = async () => {
         setIsLoading(true);
@@ -55,6 +56,59 @@ export function Sidebar() {
 
     // Project is open when we have a root path
     const hasProject = !!rootPath;
+
+    // Handler for dropping files to root
+    const handleRootDragOver = (e: React.DragEvent) => {
+        if (hasProject) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            setIsRootDragOver(true);
+        }
+    };
+
+    const handleRootDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        // Only reset if leaving the actual container (not entering a child)
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+            setIsRootDragOver(false);
+        }
+    };
+
+    const handleRootDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsRootDragOver(false);
+
+        if (!rootPath) return;
+
+        const sourcePath = e.dataTransfer.getData("text/plain");
+        if (!sourcePath) return;
+
+        // Extract file name from source path
+        const parts = sourcePath.split(/[/\\]/);
+        const fileName = parts.pop() || "";
+
+        // Determine separator based on rootPath
+        const separator = rootPath.includes('\\') ? '\\' : '/';
+        const targetPath = `${rootPath}${separator}${fileName}`;
+
+        // Don't move if already at root or same path
+        if (sourcePath === targetPath) return;
+
+        // Don't move if source is a direct child of root (already at root level)
+        const sourceDir = sourcePath.substring(0, sourcePath.lastIndexOf(separator));
+        if (sourceDir === rootPath) return;
+
+        console.log("Moving to root:", sourcePath, "->", targetPath);
+        const success = await moveItem(sourcePath, targetPath);
+        if (!success) {
+            console.error("Failed to move to root:", sourcePath);
+        }
+    };
 
     return (
         <div className="flex flex-col h-full">
@@ -110,10 +164,15 @@ export function Sidebar() {
                 </div>
             )}
 
-            {/* File Tree or Empty State */}
-            <div className="flex-1 overflow-auto px-2 pb-2">
+            {/* File Tree or Empty State - with root drop zone */}
+            <div
+                className={`flex-1 overflow-auto px-2 pb-2 ${isRootDragOver ? "root-drop-zone-active" : ""}`}
+                onDragOver={handleRootDragOver}
+                onDragLeave={handleRootDragLeave}
+                onDrop={handleRootDrop}
+            >
                 {hasProject ? (
-                    <FileTree nodes={filteredTree} depth={0} />
+                    <FileTree nodes={filteredTree} depth={0} rootPath={rootPath} />
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-center px-4">
                         <FolderOpen className="w-10 h-10 opacity-20 text-[var(--color-text-tertiary)] mb-3" />

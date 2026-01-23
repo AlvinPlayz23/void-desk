@@ -3,6 +3,7 @@ mod terminal;
 
 use commands::ai_commands;
 use commands::file_commands;
+use commands::file_watcher;
 use commands::project_commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -23,6 +24,9 @@ pub fn run() {
             ai_commands::ask_ai_stream,
             ai_commands::test_ai_connection,
             ai_commands::reset_ai_conversation,
+            file_watcher::start_file_watcher,
+            file_watcher::stop_file_watcher,
+            file_watcher::is_watching,
             terminal::create_pty,
             terminal::write_to_pty,
             terminal::resize_pty,

@@ -41,13 +41,37 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         console.log("Drag start:", node.path);
         e.dataTransfer.setData("text/plain", node.path);
         e.dataTransfer.effectAllowed = "move";
+
+        // Add a custom drag image effect by setting opacity via CSS class
+        const target = e.currentTarget as HTMLElement;
+        target.classList.add("dragging");
+
+        // Remove the class after drag ends
+        setTimeout(() => {
+            target.classList.remove("dragging");
+        }, 0);
+    };
+
+    const handleDragEnd = (e: React.DragEvent) => {
+        e.stopPropagation();
+        const target = e.currentTarget as HTMLElement;
+        target.classList.remove("dragging");
     };
 
     const handleDragEnter = (e: React.DragEvent) => {
         if (node.isDir) {
             e.preventDefault();
             e.stopPropagation();
-            setIsDragOver(true);
+
+            // Get the source path to check if we're dragging into ourselves
+            const sourcePath = e.dataTransfer.types.includes("text/plain")
+                ? e.dataTransfer.getData("text/plain")
+                : null;
+
+            // Only show drop indicator if this is a valid target
+            if (!sourcePath || (sourcePath !== node.path && !node.path.startsWith(sourcePath + "\\"))) {
+                setIsDragOver(true);
+            }
         }
     };
 
@@ -62,11 +86,13 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        // Check if we're leaving to a non-child element
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX;
-        const y = e.clientY;
-        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+
+        // Use relatedTarget to check if we're leaving to a child element
+        const relatedTarget = e.relatedTarget as HTMLElement | null;
+        const currentTarget = e.currentTarget as HTMLElement;
+
+        // Only remove highlight if we're actually leaving this element (not entering a child)
+        if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
             setIsDragOver(false);
         }
     };
@@ -81,17 +107,30 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         const sourcePath = e.dataTransfer.getData("text/plain");
         console.log("Drop detected. Source:", sourcePath, "Target Dir:", node.path);
 
-        if (sourcePath && sourcePath !== node.path && !sourcePath.startsWith(node.path)) {
-            const parts = sourcePath.split(/[/\\]/);
-            const fileName = parts.pop() || "";
-            const separator = node.path.includes('\\') ? '\\' : '/';
-            const targetPath = `${node.path}${separator}${fileName}`;
+        // Validate the move operation
+        if (!sourcePath) return;
+        if (sourcePath === node.path) return; // Can't drop on itself
+        if (node.path.startsWith(sourcePath + "\\") || node.path.startsWith(sourcePath + "/")) {
+            console.warn("Cannot move a folder into itself");
+            return;
+        }
 
-            console.log("Moving to:", targetPath);
-            const success = await moveItem(sourcePath, targetPath);
-            if (!success) {
-                console.error("Move failed from", sourcePath, "to", targetPath);
-            }
+        const parts = sourcePath.split(/[/\\]/);
+        const fileName = parts.pop() || "";
+        const separator = node.path.includes('\\') ? '\\' : '/';
+        const targetPath = `${node.path}${separator}${fileName}`;
+
+        // Check if already in this folder
+        const sourceDir = sourcePath.substring(0, sourcePath.lastIndexOf(separator));
+        if (sourceDir === node.path) {
+            console.log("Already in target folder");
+            return;
+        }
+
+        console.log("Moving to:", targetPath);
+        const success = await moveItem(sourcePath, targetPath);
+        if (!success) {
+            console.error("Move failed from", sourcePath, "to", targetPath);
         }
     };
 
@@ -186,6 +225,7 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
             <div
                 draggable
                 onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
                 onDragEnter={handleDragEnter}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}

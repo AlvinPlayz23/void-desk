@@ -173,11 +173,15 @@ opendesk/
    - [x] Theme switching (dark/light)
    - [x] File movement (Drag and Drop)
    - [x] High-fidelity PTY Terminal integration
+   - [x] Find & Replace (Ctrl+F, Ctrl+H with regex and case-sensitive options)
+   - [x] File watching for live updates (auto-refresh on external changes)
+   - [x] Multi-language syntax highlighting (JS, TS, Python, Rust, HTML, CSS, JSON, Markdown)
 
 4. **Rust backend**
    - [x] File read/write commands
    - [x] Project directory scanning
    - [x] PTY spawning and communication
+   - [x] File system watcher (notify crate with debouncing)
 
 **Deliverable**: Functional editor that can open/edit files locally
 

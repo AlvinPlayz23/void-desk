@@ -203,20 +203,44 @@ export function useFileSystem() {
 function getLanguageFromFilename(filename: string): string {
     const ext = filename.split(".").pop()?.toLowerCase();
     const languageMap: Record<string, string> = {
+        // JavaScript/TypeScript
         ts: "TypeScript",
-        tsx: "TypeScript React",
+        tsx: "TypeScript (TSX)",
         js: "JavaScript",
-        jsx: "JavaScript React",
-        json: "JSON",
-        css: "CSS",
-        html: "HTML",
-        md: "Markdown",
+        jsx: "JavaScript (JSX)",
+        mjs: "JavaScript (ESM)",
+        cjs: "JavaScript (CJS)",
+        // Python
         py: "Python",
+        pyw: "Python",
+        pyi: "Python (Stub)",
+        // Rust
         rs: "Rust",
+        // Web
+        html: "HTML",
+        htm: "HTML",
+        xhtml: "XHTML",
+        css: "CSS",
+        scss: "SCSS",
+        sass: "Sass",
+        less: "Less",
+        // Data formats
+        json: "JSON",
+        jsonc: "JSON with Comments",
+        // Documentation
+        md: "Markdown",
+        markdown: "Markdown",
+        mdx: "MDX",
+        // Config
+        toml: "TOML",
+        yaml: "YAML",
+        yml: "YAML",
+        // Other languages
         go: "Go",
         java: "Java",
         c: "C",
         cpp: "C++",
+        txt: "Plain Text",
     };
     return languageMap[ext || ""] || "Plain Text";
 }

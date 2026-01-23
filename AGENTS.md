@@ -383,7 +383,7 @@ void-desk/
 - Keyboard shortcuts
 - **Right-click Context Menu**: Copy path, reveal in explorer, delete
 - **Real-time File Tree**: Auto-refreshes after file operations (create, delete)
-- **Drag and Drop**: File movement within the file tree
+- **Drag and Drop**: File movement within the file tree (including root drop zone)
 - **Terminal Integration**: High-fidelity xterm.js terminal with PTY support (portable-pty 0.10)
 - **adk-rust Integration**:
   - AI chat with streaming via adk-rust Runner
@@ -393,13 +393,16 @@ void-desk/
   - OpenRouter/OpenAI-compatible provider support
 - **Chat History Persistence**: Messages saved to localStorage via Zustand persist middleware
 - **Enhanced AI UI**: Rich Markdown, Context Pills, @ Mentions, and Tool HUD
+- **File Watching**: Auto-refresh file tree when files are modified externally (uses `notify` crate with 500ms debouncing)
+- **Find & Replace**: Full CodeMirror search integration with Ctrl+F (find), Ctrl+H (replace), regex, and case-sensitive options
+- **Multi-Language Syntax Highlighting**: Support for JavaScript, TypeScript, Python, Rust, HTML, CSS, JSON, and Markdown
 
 **Next Steps**:
-1. Run `cargo check` in src-tauri to verify compilation
-2. Test AI chat with OpenRouter or OpenAI API
-3. Implement context injection (current file, open files)
-4. Add more tools (search files, git operations)
-5. Add file watching for live updates across the IDE
+1. Implement LSP integration for intelligent code features (see `LSP-PLAN.md`)
+2. Add global search across project (ripgrep-powered)
+3. Implement inline AI completions (ghost text)
+4. Implement inline AI completions (ghost text)
+5. Add git integration (status, blame, diff viewer)
 
 ---
 

@@ -35,3 +35,6 @@ adk-runner = "0.2"
 adk-session = "0.2"
 schemars = "0.8"
 anyhow = "1"
+
+# File watcher
+notify = { version = "6", features = ["macos_fsevent"] }

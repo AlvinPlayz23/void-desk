@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { useEffect, useRef, useMemo } from "react";
+import { EditorState, Extension } from "@codemirror/state";
 import {
     EditorView,
     keymap,
@@ -26,11 +26,125 @@ import {
     indentOnInput,
 } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import { rust } from "@codemirror/lang-rust";
+import { html } from "@codemirror/lang-html";
+import { css } from "@codemirror/lang-css";
+import { json } from "@codemirror/lang-json";
+import { markdown } from "@codemirror/lang-markdown";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { oneDark } from "@codemirror/theme-one-dark";
+import {
+    search,
+    searchKeymap,
+    highlightSelectionMatches,
+} from "@codemirror/search";
 import { useFileStore } from "@/stores/fileStore";
 import { useEditorStore } from "@/stores/editorStore";
 import { FileCode } from "lucide-react";
+
+/**
+ * Get the appropriate CodeMirror language extension based on file extension
+ */
+function getLanguageExtension(filePath: string): Extension {
+    const ext = filePath.split(".").pop()?.toLowerCase() || "";
+
+    switch (ext) {
+        // JavaScript/TypeScript
+        case "js":
+        case "jsx":
+            return javascript({ jsx: true });
+        case "ts":
+        case "tsx":
+            return javascript({ jsx: true, typescript: true });
+        case "mjs":
+        case "cjs":
+            return javascript();
+
+        // Python
+        case "py":
+        case "pyw":
+        case "pyi":
+            return python();
+
+        // Rust
+        case "rs":
+            return rust();
+
+        // HTML
+        case "html":
+        case "htm":
+        case "xhtml":
+            return html();
+
+        // CSS
+        case "css":
+            return css();
+        case "scss":
+        case "sass":
+        case "less":
+            return css(); // Basic CSS highlighting for preprocessors
+
+        // JSON
+        case "json":
+        case "jsonc":
+            return json();
+
+        // Markdown
+        case "md":
+        case "markdown":
+        case "mdx":
+            return markdown();
+
+        // Config files (often JSON-like or plain text)
+        case "toml":
+        case "yaml":
+        case "yml":
+            return []; // No specific extension, use plain text
+
+        // Default: no language extension (plain text)
+        default:
+            return [];
+    }
+}
+
+/**
+ * Get a human-readable language name for the status bar
+ */
+export function getLanguageName(filePath: string): string {
+    const ext = filePath.split(".").pop()?.toLowerCase() || "";
+
+    const languageNames: Record<string, string> = {
+        js: "JavaScript",
+        jsx: "JavaScript (JSX)",
+        ts: "TypeScript",
+        tsx: "TypeScript (TSX)",
+        mjs: "JavaScript (ESM)",
+        cjs: "JavaScript (CJS)",
+        py: "Python",
+        pyw: "Python",
+        pyi: "Python (Stub)",
+        rs: "Rust",
+        html: "HTML",
+        htm: "HTML",
+        xhtml: "XHTML",
+        css: "CSS",
+        scss: "SCSS",
+        sass: "Sass",
+        less: "Less",
+        json: "JSON",
+        jsonc: "JSON with Comments",
+        md: "Markdown",
+        markdown: "Markdown",
+        mdx: "MDX",
+        toml: "TOML",
+        yaml: "YAML",
+        yml: "YAML",
+        txt: "Plain Text",
+    };
+
+    return languageNames[ext] || "Plain Text";
+}
 
 export function CodeEditor() {
     const editorRef = useRef<HTMLDivElement>(null);
@@ -39,6 +153,12 @@ export function CodeEditor() {
     const { setCursor } = useEditorStore();
 
     const currentFile = openFiles.find((f) => f.path === currentFilePath);
+
+    // Get the language extension based on file path
+    const languageExtension = useMemo(() => {
+        if (!currentFile?.path) return [];
+        return getLanguageExtension(currentFile.path);
+    }, [currentFile?.path]);
 
     // Initialize or update editor
     useEffect(() => {
@@ -83,12 +203,17 @@ export function CodeEditor() {
                 rectangularSelection(),
                 crosshairCursor(),
                 highlightActiveLine(),
-                javascript({ jsx: true, typescript: true }),
+                languageExtension, // Dynamic language based on file extension
                 oneDark,
+                search({
+                    top: true, // Show search panel at top of editor
+                }),
+                highlightSelectionMatches(),
                 keymap.of([
                     ...closeBracketsKeymap,
                     ...defaultKeymap,
                     ...historyKeymap,
+                    ...searchKeymap,
                     indentWithTab,
                 ]),
                 updateListener,
