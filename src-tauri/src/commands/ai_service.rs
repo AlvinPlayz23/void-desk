@@ -116,11 +116,17 @@ Remember: You're not just a chatbot - you're a hands-on coding partner with actu
             builder = builder.tool(tool);
         }
 
-        builder.build().map_err(|e| format!("Failed to build agent: {}", e))
+        builder
+            .build()
+            .map_err(|e| format!("Failed to build agent: {}", e))
     }
 
     /// Get or create a session for a user
-    pub async fn get_or_create_session(&self, user_id: &str, app_name: &str) -> Result<String, String> {
+    pub async fn get_or_create_session(
+        &self,
+        user_id: &str,
+        app_name: &str,
+    ) -> Result<String, String> {
         // Check if we have a cached session
         {
             let sessions = self.user_sessions.read().await;
@@ -130,7 +136,8 @@ Remember: You're not just a chatbot - you're a hands-on coding partner with actu
         }
 
         // Create a new session
-        let session = self.session_service
+        let session = self
+            .session_service
             .create(CreateRequest {
                 app_name: app_name.to_string(),
                 user_id: user_id.to_string(),

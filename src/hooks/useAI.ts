@@ -2,19 +2,8 @@ import { useState, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
-
-export interface ToolOperation {
-    operation: string;
-    target: string;
-    status: string;
-}
-
-export interface Message {
-    role: "user" | "assistant";
-    content: string;
-    tool_call?: string;
-    toolOperations?: ToolOperation[];
-}
+import { useFileSystem } from "@/hooks/useFileSystem";
+import { useChatStore, ToolOperation, Message } from "@/stores/chatStore";
 
 export interface AIResponseChunk {
     content?: string;
@@ -25,10 +14,12 @@ export interface AIResponseChunk {
 }
 
 export function useAI() {
-    const [messages, setMessages] = useState<Message[]>([]);
     const [isStreaming, setIsStreaming] = useState(false);
     const { openAIKey, openAIBaseUrl, openAIModelId } = useSettingsStore();
     const { rootPath } = useFileStore();
+    const { refreshFileTree } = useFileSystem();
+    const messages = useChatStore((state) => state.messages);
+    const { addMessage, appendToLastMessage, addToolOperation, updateLastMessage, setMessages } = useChatStore();
 
     // Store abort flag
     const abortRef = useRef(false);
@@ -45,12 +36,13 @@ export function useAI() {
             // Reset abort flag
             abortRef.current = false;
 
-            const userMessage: Message = { role: "user", content: text };
-            setMessages((prev) => [...prev, userMessage]);
-            setIsStreaming(true);
+            const userMessage: Message = { role: "user", content: text, timestamp: Date.now() };
+            addMessage(userMessage);
 
-            const assistantMessage: Message = { role: "assistant", content: "", toolOperations: [] };
-            setMessages((prev) => [...prev, assistantMessage]);
+            const assistantMessage: Message = { role: "assistant", content: "", toolOperations: [], timestamp: Date.now() };
+            addMessage(assistantMessage);
+
+            setIsStreaming(true);
 
             try {
                 const onEvent = new Channel<AIResponseChunk>();
@@ -63,45 +55,34 @@ export function useAI() {
                     }
 
                     if (chunk.error) {
-                        setMessages((prev) => {
-                            const last = prev[prev.length - 1];
-                            return [
-                                ...prev.slice(0, -1),
-                                { ...last, content: last.content + "\n\nError: " + chunk.error },
-                            ];
+                        updateLastMessage({
+                            content: useChatStore.getState().messages.slice(-1)[0].content + "\n\nError: " + chunk.error
                         });
                         return;
                     }
 
                     if (chunk.content) {
-                        setMessages((prev) => {
-                            const last = prev[prev.length - 1];
-                            return [
-                                ...prev.slice(0, -1),
-                                { ...last, content: last.content + chunk.content },
-                            ];
-                        });
+                        appendToLastMessage(chunk.content);
                     }
 
                     if (chunk.tool_operation) {
-                        setMessages((prev) => {
-                            const last = prev[prev.length - 1];
-                            const ops = last.toolOperations || [];
-                            return [
-                                ...prev.slice(0, -1),
-                                { ...last, toolOperations: [...ops, chunk.tool_operation!] },
-                            ];
-                        });
+                        addToolOperation(chunk.tool_operation);
+
+                        // Auto-refresh file tree when AI makes changes
+                        if (chunk.tool_operation.status === "completed") {
+                            const changedOps = ["Writing", "Created", "Executed", "Deleted"];
+                            if (changedOps.includes(chunk.tool_operation.operation)) {
+                                if (rootPath) {
+                                    refreshFileTree(rootPath);
+                                }
+                            }
+                        }
                     }
 
                     if (chunk.tool_call) {
-                        setMessages((prev) => {
-                            const last = prev[prev.length - 1];
-                            return [
-                                ...prev.slice(0, -1),
-                                { ...last, tool_call: (last.tool_call || "") + "\n" + chunk.tool_call },
-                            ];
-                        });
+                        // We could log this or show it in dev mode, 
+                        // but tool_operation handles visual feedback
+                        console.log("Tool call:", chunk.tool_call);
                     }
 
                     if (chunk.done) {
@@ -120,21 +101,40 @@ export function useAI() {
                 });
             } catch (error) {
                 console.error("AI Error:", error);
-                setMessages((prev) => [
-                    ...prev,
-                    { role: "assistant", content: "Failed to connect to AI. Please check your settings." },
-                ]);
+                updateLastMessage({
+                    content: "Failed to connect to AI. Please check your settings."
+                });
                 setIsStreaming(false);
                 abortRef.current = false;
             }
         },
-        [isStreaming, openAIKey, openAIBaseUrl, openAIModelId, rootPath]
+        [isStreaming, openAIKey, openAIBaseUrl, openAIModelId, rootPath, addMessage, appendToLastMessage, addToolOperation, updateLastMessage]
     );
+
+    const retryLastMessage = useCallback(async () => {
+        const currentMessages = useChatStore.getState().messages;
+        if (currentMessages.length === 0) return;
+
+        // Find last user message
+        const lastUserMsgIdx = [...currentMessages].reverse().findIndex(m => m.role === "user");
+        if (lastUserMsgIdx === -1) return;
+
+        const actualIdx = currentMessages.length - 1 - lastUserMsgIdx;
+        const lastUserContent = currentMessages[actualIdx].content;
+
+        // Remove all messages after the last user message inclusive
+        const keptMessages = currentMessages.slice(0, actualIdx);
+        setMessages(keptMessages);
+
+        // Re-send
+        await sendMessage(lastUserContent);
+    }, [sendMessage, setMessages]);
 
     return {
         messages,
         isStreaming,
         sendMessage,
+        retryLastMessage,
         stopStreaming,
         setMessages,
     };

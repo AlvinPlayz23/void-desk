@@ -6,20 +6,25 @@ import { StatusBar } from "./StatusBar";
 import { CodeEditor } from "@/components/editor/CodeEditor";
 import { EditorTabs } from "@/components/editor/EditorTabs";
 import { AIChat } from "@/components/ai/AIChat";
+import { TerminalComponent } from "@/components/terminal/TerminalComponent";
 import { CommandPalette } from "@/components/ui/CommandPalette";
 import { SettingsModal } from "@/components/ui/SettingsModal";
-import { MessageSquare, PanelLeftClose, PanelLeft } from "lucide-react";
+import { MessageSquare, PanelLeftClose, PanelLeft, Terminal as TerminalIcon, X } from "lucide-react";
 
 export function MainLayout() {
     const {
         sidebarWidth,
         aiPanelWidth,
+        terminalHeight,
         isSidebarVisible,
         isAIPanelVisible,
+        isTerminalVisible,
         setSidebarWidth,
         setAIPanelWidth,
+        setTerminalHeight,
         toggleSidebar,
         toggleAIPanel,
+        toggleTerminal,
     } = useUIStore();
 
     const { openFiles } = useFileStore();
@@ -80,6 +85,32 @@ export function MainLayout() {
         [aiPanelWidth, setAIPanelWidth]
     );
 
+    const handleTerminalResize = useCallback(
+        (e: React.MouseEvent) => {
+            e.preventDefault();
+            const startY = e.clientY;
+            const startHeight = terminalHeight;
+
+            const onMouseMove = (e: MouseEvent) => {
+                const delta = startY - e.clientY;
+                setTerminalHeight(startHeight + delta);
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener("mousemove", onMouseMove);
+                document.removeEventListener("mouseup", onMouseUp);
+                document.body.style.cursor = "";
+                document.body.style.userSelect = "";
+            };
+
+            document.addEventListener("mousemove", onMouseMove);
+            document.addEventListener("mouseup", onMouseUp);
+            document.body.style.cursor = "row-resize";
+            document.body.style.userSelect = "none";
+        },
+        [terminalHeight, setTerminalHeight]
+    );
+
     return (
         <div className="flex flex-col h-screen bg-[var(--color-surface-base)]">
             {/* Main Content Area */}
@@ -121,6 +152,13 @@ export function MainLayout() {
 
                         <div className="flex items-center gap-1">
                             <button
+                                onClick={toggleTerminal}
+                                className={`icon-btn ${isTerminalVisible ? "text-[var(--color-accent-primary)]" : ""}`}
+                                title="Toggle Terminal"
+                            >
+                                <TerminalIcon className="w-4 h-4" />
+                            </button>
+                            <button
                                 onClick={toggleAIPanel}
                                 className={`icon-btn ${isAIPanelVisible ? "text-[var(--color-accent-primary)]" : ""}`}
                                 title="Toggle AI Panel"
@@ -137,6 +175,31 @@ export function MainLayout() {
                     <div className="flex-1 overflow-hidden">
                         <CodeEditor />
                     </div>
+
+                    {/* Terminal Panel */}
+                    {isTerminalVisible && (
+                        <div
+                            className="flex-shrink-0 flex flex-col bg-[var(--color-void-850)] border-t border-[var(--color-border-subtle)]"
+                            style={{ height: terminalHeight }}
+                        >
+                            <div
+                                className="resize-handle resize-handle-horizontal"
+                                onMouseDown={handleTerminalResize}
+                            />
+                            <div className="flex items-center justify-between px-3 py-1 bg-white/[0.02] border-b border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <TerminalIcon className="w-3.5 h-3.5 text-[var(--color-text-tertiary)]" />
+                                    <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Terminal</span>
+                                </div>
+                                <button onClick={toggleTerminal} className="opacity-30 hover:opacity-100 transition-opacity">
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                            <div className="flex-1 overflow-hidden">
+                                <TerminalComponent />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* AI Panel */}

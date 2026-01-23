@@ -27,7 +27,7 @@ function convertToFileNode(node: TauriFileNode): FileNode {
 }
 
 export function useFileSystem() {
-    const { setRootPath, setFileTree, openFile } = useFileStore();
+    const { setRootPath, setFileTree, openFile, rootPath } = useFileStore();
 
     // Open folder picker dialog
     const openFolder = async (): Promise<string | null> => {
@@ -89,6 +89,10 @@ export function useFileSystem() {
     const writeFile = async (path: string, content: string): Promise<boolean> => {
         try {
             await invoke("write_file", { path, content });
+            // Auto-refresh to show newly created files
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
             return true;
         } catch (error) {
             console.error("Failed to write file:", error);
@@ -100,9 +104,24 @@ export function useFileSystem() {
     const deleteFile = async (path: string): Promise<boolean> => {
         try {
             await invoke("delete_file", { path });
+            // Auto-refresh to remove deleted files from view
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
             return true;
         } catch (error) {
             console.error("Failed to delete file:", error);
+            return false;
+        }
+    };
+
+    // Reveal file or folder in system file explorer
+    const revealInExplorer = async (path: string): Promise<boolean> => {
+        try {
+            await invoke("reveal_in_file_explorer", { path });
+            return true;
+        } catch (error) {
+            console.error("Failed to reveal in explorer:", error);
             return false;
         }
     };
@@ -140,6 +159,10 @@ export function useFileSystem() {
     const createNewFolder = async (parentPath: string, folderName: string): Promise<boolean> => {
         try {
             await invoke("create_directory", { path: `${parentPath}/${folderName}` });
+            // Auto-refresh to show newly created folder
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
             return true;
         } catch (error) {
             console.error("Failed to create folder:", error);
@@ -147,13 +170,29 @@ export function useFileSystem() {
         }
     };
 
+    const moveItem = async (fromPath: string, toPath: string): Promise<boolean> => {
+        try {
+            await invoke("move_file", { from: fromPath, to: toPath });
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
+            return true;
+        } catch (error) {
+            console.error("Failed to move item:", error);
+            return false;
+        }
+    };
+
     return {
+        rootPath,
         openFolder,
         refreshFileTree,
         listDirectory,
         readFile,
         writeFile,
         deleteFile,
+        moveItem,
+        revealInExplorer,
         openFileInEditor,
         saveFile,
         createNewFile,

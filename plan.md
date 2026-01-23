@@ -101,7 +101,8 @@ opendesk/
 │   ├── stores/
 │   │   ├── editorStore.ts             # Editor state
 │   │   ├── fileStore.ts               # Open files, current file
-│   │   ├── aiStore.ts                 # AI chat history, settings
+│   │   ├── chatStore.ts               # AI chat history (persisted)
+│   │   ├── settingsStore.ts           # API settings (persisted)
 │   │   └── uiStore.ts                 # UI state, theme, layout
 │   ├── hooks/
 │   │   ├── useKeyboard.ts             # Global shortcuts
@@ -139,8 +140,8 @@ opendesk/
 
 ## Development Phases
 
-### Phase 1: Foundation
-**Goal**: Working editor with file management
+### Phase 1: Foundation (Completed)
+**Goal**: Functional editor with file management, D&D, and terminal.
 
 1. **Initialize project**
    ```bash
@@ -166,15 +167,17 @@ opendesk/
    ```
 
 3. **Core components**
-   - [ ] File tree with virtualization
-   - [ ] CodeMirror 6 editor setup
-   - [ ] Tab management system
-   - [ ] Theme switching (dark/light)
+   - [x] File tree with virtualization
+   - [x] CodeMirror 6 editor setup
+   - [x] Tab management system
+   - [x] Theme switching (dark/light)
+   - [x] File movement (Drag and Drop)
+   - [x] High-fidelity PTY Terminal integration
 
 4. **Rust backend**
-   - [ ] File read/write commands
-   - [ ] Project directory scanning
-   - [ ] File watching (tauri::api::path::watch)
+   - [x] File read/write commands
+   - [x] Project directory scanning
+   - [x] PTY spawning and communication
 
 **Deliverable**: Functional editor that can open/edit files locally
 
@@ -216,11 +219,15 @@ opendesk/
 219: adk-session = "0.2"
 220: ```
 
-2. **AI Services**
-   - [ ] OpenAI provider with custom base URL
-   - [ ] Streaming responses (chunked decoding)
-   - [ ] Context manager (open files, cursor position)
-   - [ ] Tool system (file operations, search)
+### Phase 2: AI & Context Integration (In Progress)
+**Goal**: Context-aware AI coding assistant
+
+1. **AI Services**
+   - [x] OpenAI provider with custom base URL
+   - [x] Streaming responses (chunked decoding)
+   - [x] Context manager (Context Pills + @ mentions)
+   - [x] AI Assistant HUD (Tool operation indicators)
+   - [x] Tool system (file operations, search)
 
 3. **AI Features**
    - [ ] **Chat panel**: Side-by-side AI conversation

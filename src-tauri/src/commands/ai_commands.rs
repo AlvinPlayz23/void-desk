@@ -27,9 +27,9 @@ async fn get_ai_service() -> Arc<AIService> {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ToolOperation {
-    pub operation: String,  // e.g., "read", "write", "list", "command"
-    pub target: String,     // e.g., file path or command
-    pub status: String,     // e.g., "started", "completed", "failed"
+    pub operation: String, // e.g., "read", "write", "list", "command"
+    pub target: String,    // e.g., file path or command
+    pub status: String,    // e.g., "started", "completed", "failed"
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -61,7 +61,7 @@ pub async fn test_ai_connection(
 
     // Try to create an agent
     let agent = AIService::create_agent(api_key, &base_url, model_id, None)?;
-    
+
     // Create a mock session service just for testing
     let session_service = Arc::new(InMemorySessionService::new());
     let session = session_service
@@ -90,7 +90,11 @@ pub async fn test_ai_connection(
 
     // Run the agent (non-streaming for test)
     let mut stream = runner
-        .run("test_user".to_string(), session.id().to_string(), test_content)
+        .run(
+            "test_user".to_string(),
+            session.id().to_string(),
+            test_content,
+        )
         .await
         .map_err(|e| format!("Connection test failed: {}", e))?;
 
@@ -135,7 +139,8 @@ pub async fn ask_ai_stream(
     let service = get_ai_service().await;
 
     // Create the agent with active_path
-    let agent = match AIService::create_agent(api_key, &base_url, model_id, active_path.as_deref()) {
+    let agent = match AIService::create_agent(api_key, &base_url, model_id, active_path.as_deref())
+    {
         Ok(a) => a,
         Err(e) => {
             on_event
@@ -237,21 +242,33 @@ pub async fn ask_ai_stream(
                                 let (operation, target) = match name.as_str() {
                                     "read_file" => (
                                         "Reading".to_string(),
-                                        args.get("path").and_then(|v| v.as_str()).unwrap_or("unknown").to_string()
+                                        args.get("path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string(),
                                     ),
                                     "write_file" | "create_file" => (
                                         "Writing".to_string(),
-                                        args.get("path").and_then(|v| v.as_str()).unwrap_or("unknown").to_string()
+                                        args.get("path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string(),
                                     ),
                                     "list_directory" => (
                                         "Listing".to_string(),
-                                        args.get("path").and_then(|v| v.as_str()).unwrap_or("unknown").to_string()
+                                        args.get("path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string(),
                                     ),
                                     "run_command" => (
                                         "Running".to_string(),
-                                        args.get("command").and_then(|v| v.as_str()).unwrap_or("unknown").to_string()
+                                        args.get("command")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string(),
                                     ),
-                                    _ => (name.clone(), "unknown".to_string())
+                                    _ => (name.clone(), "unknown".to_string()),
                                 };
 
                                 on_event
@@ -272,13 +289,20 @@ pub async fn ask_ai_stream(
                                     })
                                     .map_err(|e| e.to_string())?;
                             }
-                            Part::FunctionResponse { function_response, id: _ } => {
+                            Part::FunctionResponse {
+                                function_response,
+                                id: _,
+                            } => {
                                 // Parse result to extract success status
-                                let success = function_response.response.get("success")
+                                let success = function_response
+                                    .response
+                                    .get("success")
                                     .and_then(|v| v.as_bool())
                                     .unwrap_or(true);
-                                
-                                let target = function_response.response.get("path")
+
+                                let target = function_response
+                                    .response
+                                    .get("path")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
 
@@ -287,7 +311,7 @@ pub async fn ask_ai_stream(
                                     "write_file" => "Created",
                                     "list_directory" => "Listed",
                                     "run_command" => "Executed",
-                                    _ => "Completed"
+                                    _ => "Completed",
                                 };
 
                                 on_event
@@ -296,12 +320,17 @@ pub async fn ask_ai_stream(
                                         tool_call: Some(format!(
                                             "Tool {} returned: {}",
                                             function_response.name,
-                                            serde_json::to_string(&function_response.response).unwrap_or_default()
+                                            serde_json::to_string(&function_response.response)
+                                                .unwrap_or_default()
                                         )),
                                         tool_operation: Some(ToolOperation {
                                             operation: operation.to_string(),
                                             target: target.to_string(),
-                                            status: if success { "completed".to_string() } else { "failed".to_string() },
+                                            status: if success {
+                                                "completed".to_string()
+                                            } else {
+                                                "failed".to_string()
+                                            },
                                         }),
                                         error: None,
                                         done: false,

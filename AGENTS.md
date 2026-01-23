@@ -89,7 +89,7 @@ export function ComponentName() {
 }
 ```
 
-**State Management (Zustand)**:
+**State Management (Zustand with Persistence)**:
 ```typescript
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -110,7 +110,69 @@ export const useStore = create<StoreState>()(
 );
 ```
 
+**Chat History with Persisted Messages**:
+```typescript
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+export interface Message {
+    role: "user" | "assistant";
+    content: string;
+    toolOperations?: ToolOperation[];
+    timestamp: number;
+}
+
+interface ChatState {
+    messages: Message[];
+    addMessage: (message: Message) => void;
+    clearMessages: () => void;
+}
+
+export const useChatStore = create<ChatState>()(
+    persist(
+        (set) => ({
+            messages: [],
+            addMessage: (msg) => set((state) => ({
+                messages: [...state.messages, msg]
+            })),
+            clearMessages: () => set({ messages: [] }),
+        }),
+        { name: "voiddesk-chat-history" }
+    )
+);
+```
+
 **Path Aliases**: Use `@/` for src directory imports (configured in tsconfig.json)
+
+**Context Menu Pattern**:
+```tsx
+// Fixed position context menu with click-outside-to-close
+const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+const menuRef = useRef<HTMLDivElement>(null);
+
+useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+        if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+            setContextMenu(null);
+        }
+    };
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+}, []);
+
+return (
+    <>
+        <div onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }); }}>
+            {/* content */}
+        </div>
+        {contextMenu && (
+            <div ref={menuRef} style={{ left: contextMenu.x, top: contextMenu.y }} className="context-menu">
+                {/* menu items */}
+            </div>
+        )}
+    </>
+);
+```
 
 ### Rust (Tauri Backend)
 
@@ -137,6 +199,16 @@ pub async fn command_name(
 ) -> Result<ReturnType, String> {
     // Use .map_err(|e| e.to_string()) for error conversion
     do_something().map_err(|e| e.to_string())
+}
+```
+
+**Cross-platform File Explorer**:
+```rust
+#[tauri::command]
+pub async fn reveal_in_file_explorer(path: String) -> Result<(), String> {
+    // Windows: explorer /select, path
+    // macOS: open -R path
+    // Linux: xdg-open parent(path)
 }
 ```
 
@@ -264,16 +336,31 @@ void-desk/
 │   ├── components/
 │   │   ├── editor/               # CodeMirror editor
 │   │   ├── file-tree/            # File explorer
+│   │   │   ├── FileTree.tsx      # Recursive file tree
+│   │   │   └── FileItem.tsx      # Individual item with context menu
 │   │   ├── ai/                   # AI chat panel
+│   │   │   └── AIChat.tsx        # Chat interface with tool call display
 │   │   ├── layout/               # App layout (MainLayout, Sidebar, StatusBar)
 │   │   └── ui/                   # Shared UI (modals, buttons)
 │   ├── stores/                   # Zustand stores
+│   │   ├── fileStore.ts          # File tree state, open files
+│   │   ├── chatStore.ts          # Chat history with persist middleware
+│   │   ├── settingsStore.ts      # API settings (persisted)
+│   │   └── uiStore.ts            # UI state
 │   ├── hooks/                    # React hooks
+│   │   ├── useFileSystem.ts      # File operations with auto-refresh
+│   │   └── useAI.ts              # AI chat with streaming
 │   └── App.tsx
 ├── src-tauri/                    # Rust backend
 │   ├── src/
-│   │   ├── lib.rs                # Tauri setup
+│   │   ├── lib.rs                # Tauri setup, command registration
 │   │   └── commands/             # Tauri commands
+│   │       ├── mod.rs
+│   │       ├── file_commands.rs  # File ops + reveal_in_file_explorer
+│   │       ├── project_commands.rs
+│   │       ├── ai_commands.rs    # AI streaming
+│   │       ├── ai_service.rs     # adk-rust agent, runner, session
+│   │       └── ai_tools.rs       # FunctionTools
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── adk-rust-docs-examples/       # Reference examples for adk-rust
@@ -294,19 +381,25 @@ void-desk/
 - Settings modal for API configuration
 - Command palette (Ctrl+Shift+P)
 - Keyboard shortcuts
+- **Right-click Context Menu**: Copy path, reveal in explorer, delete
+- **Real-time File Tree**: Auto-refreshes after file operations (create, delete)
+- **Drag and Drop**: File movement within the file tree
+- **Terminal Integration**: High-fidelity xterm.js terminal with PTY support (portable-pty 0.10)
 - **adk-rust Integration**:
   - AI chat with streaming via adk-rust Runner
   - Session management for conversation history
   - FunctionTools for file operations (read, write, list)
   - FunctionTools for command execution (run_command)
   - OpenRouter/OpenAI-compatible provider support
+- **Chat History Persistence**: Messages saved to localStorage via Zustand persist middleware
+- **Enhanced AI UI**: Rich Markdown, Context Pills, @ Mentions, and Tool HUD
 
 **Next Steps**:
 1. Run `cargo check` in src-tauri to verify compilation
 2. Test AI chat with OpenRouter or OpenAI API
 3. Implement context injection (current file, open files)
 4. Add more tools (search files, git operations)
-5. Add conversation history persistence
+5. Add file watching for live updates across the IDE
 
 ---
 
@@ -316,7 +409,12 @@ void-desk/
 |------|---------|
 | `plan.md` | Full architecture and implementation roadmap |
 | `note.md` | adk-rust API patterns and OpenRouter setup |
+| `src/stores/chatStore.ts` | Chat history persistence with Zustand |
+| `src/components/file-tree/FileItem.tsx` | File item with right-click context menu |
+| `src/hooks/useFileSystem.ts` | File operations with auto-refresh |
+| `src/components/ai/AIChat.tsx` | AI chat with enhanced tool call UI |
 | `src-tauri/src/commands/ai_commands.rs` | Current AI streaming implementation |
+| `src-tauri/src/commands/file_commands.rs` | File operations + reveal_in_file_explorer |
 | `adk-rust-docs-examples/examples/openai_tools/main.rs` | Tool definition patterns |
 | `adk-rust-docs-examples/examples/openai_basic/main.rs` | Basic streaming with Runner |
 
@@ -329,3 +427,5 @@ void-desk/
 3. **Tool Schema**: Derive `JsonSchema` for tool args, use `/// doc comments` for parameter descriptions
 4. **Session Required**: Always create a session before running the agent
 5. **Tauri Channels**: For streaming to frontend, use `Channel<T>` in command signature
+6. **Auto-refresh Pattern**: After file operations, call `refreshFileTree(rootPath)` to update the UI
+7. **Context Menu**: Always prevent default and use fixed positioning for right-click menus

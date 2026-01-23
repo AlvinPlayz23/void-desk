@@ -70,6 +70,44 @@
   /* Animations */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-expo: cubic-bezier(0.87, 0, 0.13, 1);
+
+  --animate-shiny: shiny-sweep 3s ease-in-out infinite;
+  --animate-scanline: scanline 8s linear infinite;
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes wave-pulse {
+
+  0%,
+  100% {
+    transform: scaleY(0.5);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: scaleY(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes shiny-sweep {
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+  }
+
+  25%,
+  100% {
+    transform: translateX(200%) skewX(-15deg);
+  }
 }
 
 /* ============================================
@@ -215,6 +253,11 @@ body {
   background: var(--color-accent-primary);
 }
 
+.file-item.drag-over {
+  background: rgb(99 102 241 / 0.1);
+  box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+}
+
 /* ============================================
    Editor Tab Styles
    ============================================ */
@@ -339,24 +382,37 @@ body {
    ============================================ */
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes slideUp {
-  from { 
+  from {
     opacity: 0;
     transform: translateY(8px);
   }
-  to { 
+
+  to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .animate-fade-in {
@@ -369,6 +425,82 @@ body {
 
 .animate-pulse {
   animation: pulse 1.5s ease-in-out infinite;
+}
+
+.shiny-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.shiny-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(to right,
+      transparent 0%,
+      rgb(255 255 255 / 0.1) 50%,
+      transparent 100%);
+  transform: translateX(-100%) skewX(-15deg);
+  animation: shiny-sweep 4s infinite;
+  pointer-events: none;
+}
+
+.glow-blue {
+  box-shadow: 0 0 15px rgb(59 130 246 / 0.2);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 15px rgb(16 185 129 / 0.2);
+}
+
+.glow-red {
+  box-shadow: 0 0 15px rgb(239 68 68 / 0.2);
+}
+
+/* Technical UI Utilities */
+.bg-scanlines {
+  position: relative;
+  overflow: hidden;
+}
+
+.bg-scanlines::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--color-accent-primary), transparent);
+  opacity: 0.2;
+  animation: scanline 4s linear infinite;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.void-card {
+  background: linear-gradient(135deg, var(--color-void-850) 0%, var(--color-void-900) 100%);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: inset 0 0 20px rgb(0 0 0 / 0.5);
+  position: relative;
+}
+
+.void-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+}
+
+.holograph-text {
+  background: linear-gradient(to bottom, #fff 30%, var(--color-accent-primary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 10px rgb(99 102 241 / 0.5);
 }
 
 /* ============================================

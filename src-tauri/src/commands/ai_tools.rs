@@ -8,7 +8,7 @@ use adk_core::{AdkError, ToolContext};
 use adk_tool::FunctionTool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,9 +46,10 @@ pub struct ListDirectoryArgs {
 
 /// Helper to validate and resolve a path within the project root
 fn resolve_and_validate_path(root: &str, target: &str) -> Result<PathBuf, AdkError> {
-    let root_path = Path::new(root).canonicalize()
+    let root_path = Path::new(root)
+        .canonicalize()
         .map_err(|e| AdkError::Tool(format!("Invalid project root: {}", e)))?;
-    
+
     let target_path = if Path::new(target).is_absolute() {
         PathBuf::from(target)
     } else {

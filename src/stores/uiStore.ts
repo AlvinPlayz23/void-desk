@@ -10,10 +10,12 @@ interface UIState {
     // Panel sizes (percentages)
     sidebarWidth: number;
     aiPanelWidth: number;
+    terminalHeight: number;
 
     // Visibility
     isSidebarVisible: boolean;
     isAIPanelVisible: boolean;
+    isTerminalVisible: boolean;
     isCommandPaletteVisible: boolean;
     isSettingsVisible: boolean;
     commandPaletteMode: "command" | "file";
@@ -27,7 +29,10 @@ interface UIState {
 
     toggleSidebar: () => void;
     toggleAIPanel: () => void;
+    toggleTerminal: () => void;
     toggleSettings: () => void;
+
+    setTerminalHeight: (height: number) => void;
 
     setCommandPaletteVisible: (visible: boolean) => void;
     setCommandPaletteMode: (mode: "command" | "file") => void;
@@ -41,8 +46,10 @@ export const useUIStore = create<UIState>()(
             theme: "dark",
             sidebarWidth: 240,
             aiPanelWidth: 360,
+            terminalHeight: 280,
             isSidebarVisible: true,
             isAIPanelVisible: false,
+            isTerminalVisible: false,
             isCommandPaletteVisible: false,
             isSettingsVisible: false,
             commandPaletteMode: "command",
@@ -58,8 +65,10 @@ export const useUIStore = create<UIState>()(
             toggleSidebar: () => set({ isSidebarVisible: !get().isSidebarVisible }),
 
             toggleAIPanel: () => set({ isAIPanelVisible: !get().isAIPanelVisible }),
+            toggleTerminal: () => set({ isTerminalVisible: !get().isTerminalVisible }),
 
             toggleSettings: () => set({ isSettingsVisible: !get().isSettingsVisible }),
+            setTerminalHeight: (height) => set({ terminalHeight: Math.max(100, Math.min(800, height)) }),
 
             setCommandPaletteVisible: (visible) => set({ isCommandPaletteVisible: visible }),
             setCommandPaletteMode: (mode) => set({ commandPaletteMode: mode }),
