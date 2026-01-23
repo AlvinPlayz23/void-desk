@@ -4,7 +4,7 @@
 
 VoiDesk is a lightweight, blazingly fast code editor built with **Tauri 2.0** and **React**. It features a futuristic, dark-mode-first aesthetic and deeply integrated AI capabilities designed to enhance developer productivity without getting in the way.
 
-![VoiDesk Screenshot](https://via.placeholder.com/800x450.png?text=VoiDesk+UI+Preview)
+![VoiDesk Screenshot](screenshot.png)
 
 ## ✨ key Features
 
