@@ -1,15 +1,18 @@
 mod commands;
+mod lsp;
 mod terminal;
 
 use commands::ai_commands;
 use commands::file_commands;
 use commands::file_watcher;
+use commands::lsp_commands;
 use commands::project_commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(terminal::TerminalState::new())
+        .manage(lsp_commands::LspState::new())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
@@ -31,6 +34,11 @@ pub fn run() {
             terminal::write_to_pty,
             terminal::resize_pty,
             terminal::close_pty,
+            lsp_commands::lsp_set_root,
+            lsp_commands::lsp_did_open,
+            lsp_commands::lsp_did_change,
+            lsp_commands::lsp_completion,
+            lsp_commands::lsp_hover,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

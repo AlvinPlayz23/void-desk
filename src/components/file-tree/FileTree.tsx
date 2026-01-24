@@ -22,7 +22,7 @@ export function FileTree({ nodes, depth, rootPath }: FileTreeProps) {
     };
 
     // Prevent drag events from bubbling to parent (root drop zone) when over file items
-    const handleDragOver = (e: React.DragEvent) => {
+    const handleDragOver = (_e: React.DragEvent) => {
         // Let events bubble up if not over a specific item
         // The individual FileItems will stop propagation when appropriate
     };

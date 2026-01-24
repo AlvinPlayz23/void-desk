@@ -63,7 +63,7 @@ export const useFileStore = create<FileState>((set, get) => ({
     },
 
     openFile: (file) => {
-        const { openFiles, currentFilePath } = get();
+        const { openFiles } = get();
         const exists = openFiles.find((f) => f.path === file.path);
 
         if (!exists) {

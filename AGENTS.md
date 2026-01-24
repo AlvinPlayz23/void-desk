@@ -392,34 +392,73 @@ void-desk/
   - FunctionTools for command execution (run_command)
   - OpenRouter/OpenAI-compatible provider support
 - **Chat History Persistence**: Messages saved to localStorage via Zustand persist middleware
-- **Enhanced AI UI**: Rich Markdown, Context Pills, @ Mentions, and Tool HUD
-- **File Watching**: Auto-refresh file tree when files are modified externally (uses `notify` crate with 500ms debouncing)
-- **Find & Replace**: Full CodeMirror search integration with Ctrl+F (find), Ctrl+H (replace), regex, and case-sensitive options
-- **Multi-Language Syntax Highlighting**: Support for JavaScript, TypeScript, Python, Rust, HTML, CSS, JSON, and Markdown
+- **Context Injection**: @ mentions to attach file content to messages (Sent content now readable by AI)
+- **Live Explorer**: Auto-refresh file tree when files are modified externally (uses `notify` crate)
+- **Enhanced AI UI**: Rich Markdown, Context Pills, and Tool HUD
+- **LSP Integration (Phase 1)**:
+  - Autocomplete via `textDocument/completion` with CodeMirror integration
+  - Hover tooltips via `textDocument/hover` with markdown rendering
+  - TypeScript/JavaScript support via `typescript-language-server`
+  - Proper Windows URI handling (`file:///C:/path` format)
+  - Request/response routing with oneshot channels (no response stealing)
+  - Server request handling (`workspace/configuration`, etc.)
 
 **Next Steps**:
-1. Implement LSP integration for intelligent code features (see `LSP-PLAN.md`)
-2. Add global search across project (ripgrep-powered)
-3. Implement inline AI completions (ghost text)
+1. Implement LSP Diagnostics (error squiggles, Problems panel) - Phase 2
+2. Add Go-To-Definition and Find References
+3. Add global search across project (powered by ripgrep)
 4. Implement inline AI completions (ghost text)
-5. Add git integration (status, blame, diff viewer)
+5. Add git integration (status, diffs)
 
 ---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Tauri 2.0 Window                     │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │              React Frontend (Vite)                │  │
+│  │  ┌──────────┐  ┌──────────────┐  ┌─────────────┐ │  │
+│  │  │ File     │  │ CodeMirror 6 │  │ AI Panel    │ │  │
+│  │  │ Tree     │  │ Editor       │  │ (Chat/Chat) │ │  │
+│  │  │          │  │              │  │             │ │  │
+│  │  └──────────┘  └──────────────┘  └─────────────┘ │  │
+│  └───────────────────────────────────────────────────┘  │
+│                         ▲                                │
+│         Tauri Commands (Rust FFI)                        │
+│                         ▼                                │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │              Rust Backend                         │  │
+│  │  ┌──────────────┐  ┌──────────────────────────┐  │  │
+│  │  │ File System  │  │ AI Service (adk-rust)      │  │  │
+│  │  │ Operations   │  │ • OpenRouter/Compatible     │  │  │
+│  │  │              │  │ • Modular Agent Interface   │  │  │
+│  │  │              │  │ • Tool/Function Calling     │  │  │
+│  │  └──────────────┘  └──────────────────────────┘  │  │
+│  │  ┌──────────────┐  ┌──────────────────────────┐  │  │
+│  │  │ LSP Bridge   │  │ Context Manager          │  │  │
+│  │    │  │  │ (language • Open Files Index       │  │  │
+│  │  │  servers)    │  │ • Project Structure      │  │  │
+│  │  └──────────────┘  └──────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────┘  │
+│                         ▲                                │
+│              System APIs (OS Level)                      │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## Key Files to Reference
 
 | File | Purpose |
 |------|---------|
+| `README.md` | General overview and project screenshots |
 | `plan.md` | Full architecture and implementation roadmap |
-| `note.md` | adk-rust API patterns and OpenRouter setup |
 | `src/stores/chatStore.ts` | Chat history persistence with Zustand |
 | `src/components/file-tree/FileItem.tsx` | File item with right-click context menu |
 | `src/hooks/useFileSystem.ts` | File operations with auto-refresh |
 | `src/components/ai/AIChat.tsx` | AI chat with enhanced tool call UI |
 | `src-tauri/src/commands/ai_commands.rs` | Current AI streaming implementation |
 | `src-tauri/src/commands/file_commands.rs` | File operations + reveal_in_file_explorer |
-| `adk-rust-docs-examples/examples/openai_tools/main.rs` | Tool definition patterns |
-| `adk-rust-docs-examples/examples/openai_basic/main.rs` | Basic streaming with Runner |
 
 ---
 

@@ -1,4 +1,4 @@
 d&d still not working
 @ fixed but when message sent there is no ui showing that context is added...
 started and complete tool indicator 
-still its not live explorer (have to press refresh)
+improve ui for autocomplete(if possible only) and hover

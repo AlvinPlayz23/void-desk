@@ -32,7 +32,8 @@ import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { closeBrackets, closeBracketsKeymap, autocompletion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import { hoverTooltip, Tooltip } from "@codemirror/view";
 import { oneDark } from "@codemirror/theme-one-dark";
 import {
     search,
@@ -41,6 +42,7 @@ import {
 } from "@codemirror/search";
 import { useFileStore } from "@/stores/fileStore";
 import { useEditorStore } from "@/stores/editorStore";
+import { useLsp } from "@/hooks/useLsp";
 import { FileCode } from "lucide-react";
 
 /**
@@ -151,14 +153,98 @@ export function CodeEditor() {
     const viewRef = useRef<EditorView>();
     const { openFiles, currentFilePath, updateFileContent } = useFileStore();
     const { setCursor } = useEditorStore();
+    const { didOpen, didChange, getCompletions, getHover } = useLsp();
 
     const currentFile = openFiles.find((f) => f.path === currentFilePath);
+
+    // Debounced sync for LSP
+    const syncLsp = useMemo(() => {
+        let timeout: ReturnType<typeof setTimeout>;
+        return (path: string, content: string) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                didChange(path, content);
+            }, 300);
+        };
+    }, [didChange]);
 
     // Get the language extension based on file path
     const languageExtension = useMemo(() => {
         if (!currentFile?.path) return [];
         return getLanguageExtension(currentFile.path);
     }, [currentFile?.path]);
+
+    // Notify LSP when file is opened
+    useEffect(() => {
+        if (currentFile?.path && currentFile?.content !== undefined) {
+            didOpen(currentFile.path, currentFile.content);
+        }
+    }, [currentFile?.path, didOpen]);
+
+    // Create LSP completion source
+    const lspCompletionSource = useMemo(() => {
+        if (!currentFile?.path) return null;
+        const filePath = currentFile.path;
+
+        return async (context: CompletionContext): Promise<CompletionResult | null> => {
+            const pos = context.pos;
+            const line = context.state.doc.lineAt(pos);
+            const lineNum = line.number - 1; // LSP uses 0-based lines
+            const character = pos - line.from;
+
+            // Only trigger on explicit completion or after typing identifier chars
+            if (!context.explicit && !context.matchBefore(/\w+$/)) {
+                return null;
+            }
+
+            try {
+                const items = await getCompletions(filePath, lineNum, character);
+                if (!items.length) return null;
+
+                return {
+                    from: context.matchBefore(/\w*$/)?.from ?? pos,
+                    options: items.map(item => ({
+                        label: item.label,
+                        type: item.kind || "text",
+                        detail: item.detail,
+                        apply: item.insertText || item.label,
+                    })),
+                };
+            } catch {
+                return null;
+            }
+        };
+    }, [currentFile?.path, getCompletions]);
+
+    // Create LSP hover tooltip
+    const lspHoverTooltip = useMemo(() => {
+        if (!currentFile?.path) return [];
+        const filePath = currentFile.path;
+
+        return hoverTooltip(async (view, pos): Promise<Tooltip | null> => {
+            const line = view.state.doc.lineAt(pos);
+            const lineNum = line.number - 1;
+            const character = pos - line.from;
+
+            try {
+                const hover = await getHover(filePath, lineNum, character);
+                if (!hover || !hover.contents) return null;
+
+                return {
+                    pos,
+                    create: () => {
+                        const dom = document.createElement("div");
+                        dom.className = "lsp-hover-tooltip";
+                        dom.style.cssText = "padding: 8px 12px; max-width: 400px; font-size: 12px; background: var(--color-void-800); border: 1px solid var(--color-border-subtle); border-radius: 6px;";
+                        dom.innerHTML = `<pre style="margin:0; white-space: pre-wrap; font-family: var(--font-mono);">${hover.contents}</pre>`;
+                        return { dom };
+                    },
+                };
+            } catch {
+                return null;
+            }
+        });
+    }, [currentFile?.path, getHover]);
 
     // Initialize or update editor
     useEffect(() => {
@@ -177,6 +263,7 @@ export function CodeEditor() {
             if (update.docChanged) {
                 const content = update.state.doc.toString();
                 updateFileContent(currentFile.path, content);
+                syncLsp(currentFile.path, content); // Sync LSP when doc changes
             }
 
             // Update cursor position
@@ -205,6 +292,12 @@ export function CodeEditor() {
                 highlightActiveLine(),
                 languageExtension, // Dynamic language based on file extension
                 oneDark,
+                // LSP-powered features
+                lspCompletionSource ? autocompletion({
+                    override: [lspCompletionSource],
+                    activateOnTyping: true,
+                }) : [],
+                lspHoverTooltip,
                 search({
                     top: true, // Show search panel at top of editor
                 }),

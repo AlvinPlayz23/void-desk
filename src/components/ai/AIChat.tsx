@@ -10,7 +10,6 @@ import { useFileStore } from "@/stores/fileStore";
 
 export function AIChat() {
     const { messages, isStreaming, sendMessage, stopStreaming, setMessages } = useAI();
-    const { contextPaths, removeContextPath } = useChatStore();
     const toggleSettings = useUIStore((state) => state.toggleSettings);
 
     const [input, setInput] = useState("");
