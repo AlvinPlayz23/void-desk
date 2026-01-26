@@ -208,9 +208,9 @@ export function Sidebar() {
                 </div>
             )}
 
-            {/* File Tree or Empty State - with root drop zone */}
-            <div
-                className={`flex-1 overflow-auto px-2 pb-2 ${isRootDragOver ? "root-drop-zone-active" : ""}`}
+            {/* File Tree or Empty State - empty space acts as root drop zone */}
+            <div 
+                className={`flex-1 overflow-auto px-2 pb-2 ${isRootDragOver ? "bg-[rgb(99_102_241_/_0.05)]" : ""}`}
                 onDragOver={handleRootDragOver}
                 onDragLeave={handleRootDragLeave}
                 onDrop={handleRootDrop}
@@ -238,7 +238,7 @@ export function Sidebar() {
 
             {/* Footer - only show when project is open */}
             {hasProject && (
-                <div className="flex items-center justify-between p-2 border-t border-[var(--color-border-subtle)]">
+                <div className="flex items-center justify-between p-2 border-t border-[var(--color-border-subtle)] shrink-0">
                     <span className="text-xs text-[var(--color-text-muted)] truncate max-w-[80%]" title={rootPath}>
                         {rootPath.split(/[/\\]/).pop()}
                     </span>
