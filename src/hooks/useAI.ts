@@ -37,17 +37,22 @@ export function useAI() {
             // Reset abort flag
             abortRef.current = false;
 
-            const userMessage: Message = { role: "user", content: text, timestamp: Date.now() };
+            // Get context from attached files
+            const contextPaths = useChatStore.getState().currentContextPaths();
+            let contextContent = "";
+
+            const userMessage: Message = {
+                role: "user",
+                content: text,
+                contextPaths: contextPaths.length > 0 ? [...contextPaths] : undefined,
+                timestamp: Date.now()
+            };
             addMessage(userMessage);
 
             const assistantMessage: Message = { role: "assistant", content: "", toolOperations: [], timestamp: Date.now() };
             addMessage(assistantMessage);
 
             setIsStreaming(true);
-
-            // Get context from attached files
-            const contextPaths = useChatStore.getState().currentContextPaths();
-            let contextContent = "";
 
             if (contextPaths.length > 0) {
                 const contextParts: string[] = [];
