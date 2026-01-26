@@ -209,6 +209,9 @@ export function AIChat() {
                                 }`}>
                                 {msg.toolOperations && <ToolOperationDisplay operations={msg.toolOperations} />}
                                 <MarkdownContent content={msg.content} />
+                                {msg.role === "user" && msg.contextPaths && msg.contextPaths.length > 0 && (
+                                    <MessageContextPills paths={msg.contextPaths} />
+                                )}
                             </div>
                         </div>
                     ))
@@ -270,6 +273,23 @@ export function AIChat() {
                     </button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+function MessageContextPills({ paths }: { paths: string[] }) {
+    return (
+        <div className="mt-3 flex flex-wrap gap-1.5 pt-2 border-t border-[var(--color-surface-base)]/10">
+            {paths.map((path) => (
+                <div
+                    key={path}
+                    className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-[var(--color-surface-base)]/10 text-[var(--color-surface-base)] border border-[var(--color-surface-base)]/10 text-[9px] font-medium"
+                    title={path}
+                >
+                    <FileIcon className="w-2.5 h-2.5 opacity-60" />
+                    <span className="truncate max-w-[120px]">{path.split(/[/\\]/).pop()}</span>
+                </div>
+            ))}
         </div>
     );
 }

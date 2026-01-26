@@ -12,6 +12,7 @@ export interface Message {
     content: string;
     tool_call?: string;
     toolOperations?: ToolOperation[];
+    contextPaths?: string[];
     timestamp: number;
 }
 
