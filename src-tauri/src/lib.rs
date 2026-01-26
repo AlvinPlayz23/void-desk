@@ -27,6 +27,7 @@ pub fn run() {
             ai_commands::ask_ai_stream,
             ai_commands::test_ai_connection,
             ai_commands::reset_ai_conversation,
+            ai_commands::get_inline_completion,
             file_watcher::start_file_watcher,
             file_watcher::stop_file_watcher,
             file_watcher::is_watching,

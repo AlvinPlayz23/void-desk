@@ -111,6 +111,100 @@
 }
 
 /* ============================================
+   Theme Definitions
+   ============================================ */
+
+/* Obsidian Theme (Default - Current purple/indigo theme) */
+[data-theme="obsidian"] {
+  --color-void-950: #050508;
+  --color-void-900: #0a0a0f;
+  --color-void-850: #0d0d14;
+  --color-void-800: #11111a;
+  --color-void-700: #1a1a26;
+  --color-void-600: #252533;
+  --color-void-500: #3a3a4d;
+  --color-void-400: #5c5c73;
+  --color-void-300: #8585a3;
+  --color-void-200: #b3b3cc;
+  --color-void-100: #e0e0eb;
+  --color-void-50: #f5f5fa;
+  --color-accent-primary: #6366f1;
+  --color-accent-secondary: #8b5cf6;
+  --color-surface-base: var(--color-void-900);
+  --color-surface-elevated: var(--color-void-850);
+  --color-surface-overlay: var(--color-void-800);
+  --color-surface-sunken: var(--color-void-950);
+  --color-text-primary: var(--color-void-50);
+  --color-text-secondary: var(--color-void-300);
+  --color-text-tertiary: var(--color-void-400);
+  --color-text-muted: var(--color-void-500);
+  --color-border-subtle: rgb(255 255 255 / 0.06);
+  --color-border-default: rgb(255 255 255 / 0.1);
+  --color-border-strong: rgb(255 255 255 / 0.15);
+  --editor-bg: #0a0a0f;
+}
+
+/* Dark Theme (Pure black and white) */
+[data-theme="dark"] {
+  --color-void-950: #000000;
+  --color-void-900: #0a0a0a;
+  --color-void-850: #121212;
+  --color-void-800: #1a1a1a;
+  --color-void-700: #242424;
+  --color-void-600: #2e2e2e;
+  --color-void-500: #444444;
+  --color-void-400: #666666;
+  --color-void-300: #999999;
+  --color-void-200: #cccccc;
+  --color-void-100: #e5e5e5;
+  --color-void-50: #ffffff;
+  --color-accent-primary: #ffffff;
+  --color-accent-secondary: #cccccc;
+  --color-surface-base: #0a0a0a;
+  --color-surface-elevated: #121212;
+  --color-surface-overlay: #1a1a1a;
+  --color-surface-sunken: #000000;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #cccccc;
+  --color-text-tertiary: #999999;
+  --color-text-muted: #666666;
+  --color-border-subtle: rgb(255 255 255 / 0.08);
+  --color-border-default: rgb(255 255 255 / 0.12);
+  --color-border-strong: rgb(255 255 255 / 0.2);
+  --editor-bg: #0a0a0a;
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  --color-void-950: #ffffff;
+  --color-void-900: #fafafa;
+  --color-void-850: #f5f5f5;
+  --color-void-800: #eeeeee;
+  --color-void-700: #e0e0e0;
+  --color-void-600: #d0d0d0;
+  --color-void-500: #a0a0a0;
+  --color-void-400: #808080;
+  --color-void-300: #606060;
+  --color-void-200: #404040;
+  --color-void-100: #202020;
+  --color-void-50: #000000;
+  --color-accent-primary: #4f46e5;
+  --color-accent-secondary: #7c3aed;
+  --color-surface-base: #fafafa;
+  --color-surface-elevated: #ffffff;
+  --color-surface-overlay: #f5f5f5;
+  --color-surface-sunken: #eeeeee;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #404040;
+  --color-text-tertiary: #606060;
+  --color-text-muted: #808080;
+  --color-border-subtle: rgb(0 0 0 / 0.08);
+  --color-border-default: rgb(0 0 0 / 0.12);
+  --color-border-strong: rgb(0 0 0 / 0.2);
+  --editor-bg: #ffffff;
+}
+
+/* ============================================
    Base Styles
    ============================================ */
 
@@ -406,6 +500,27 @@ body {
 
 .cm-editor .cm-activeLine {
   background: rgb(255 255 255 / 0.03);
+}
+
+/* Light theme CodeMirror overrides */
+[data-theme="light"] .cm-editor .cm-activeLine {
+  background: rgb(0 0 0 / 0.03);
+}
+
+[data-theme="light"] .cm-editor .cm-activeLineGutter {
+  background: #e5e5e5;
+}
+
+[data-theme="light"] .cm-editor .cm-selectionBackground {
+  background: rgb(79 70 229 / 0.2) !important;
+}
+
+[data-theme="light"] .cm-editor.cm-focused .cm-selectionBackground {
+  background: rgb(79 70 229 / 0.3) !important;
+}
+
+[data-theme="light"] .cm-editor .cm-content {
+  color: #1a1a1a;
 }
 
 .cm-editor .cm-cursor {

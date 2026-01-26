@@ -402,13 +402,17 @@ void-desk/
   - Proper Windows URI handling (`file:///C:/path` format)
   - Request/response routing with oneshot channels (no response stealing)
   - Server request handling (`workspace/configuration`, etc.)
+- **Inline AI Completions (Ghost Text)**:
+  - Copilot-style suggestions displayed as grayed-out text at cursor
+  - Tab to accept all, Ctrl/Cmd+Right to accept word-by-word, Escape to dismiss
+  - 500ms debounce with request cancellation for performance
+  - Toggle in Settings modal
 
 **Next Steps**:
 1. Implement LSP Diagnostics (error squiggles, Problems panel) - Phase 2
 2. Add Go-To-Definition and Find References
 3. Add global search across project (powered by ripgrep)
-4. Implement inline AI completions (ghost text)
-5. Add git integration (status, diffs)
+4. Add git integration (status, diffs)
 
 ---
 

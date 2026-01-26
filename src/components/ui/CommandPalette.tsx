@@ -29,7 +29,7 @@ export function CommandPalette() {
         toggleSidebar,
         toggleAIPanel,
         toggleTheme,
-        toggleSettings,
+        openSettingsPage,
         theme
     } = useUIStore();
 
@@ -63,7 +63,7 @@ export function CommandPalette() {
             id: 'open-settings',
             name: 'Settings: Open Settings',
             icon: <Settings className="w-4 h-4" />,
-            action: toggleSettings,
+            action: () => openSettingsPage(),
             shortcut: 'Ctrl+,'
         },
         {
@@ -114,7 +114,7 @@ export function CommandPalette() {
                 }
             },
         },
-    ], [toggleSidebar, toggleAIPanel, toggleTheme, theme, rootPath]);
+    ], [toggleSidebar, toggleAIPanel, toggleTheme, openSettingsPage, theme, rootPath]);
 
     // Fuzzy search logic
     const items = useMemo(() => {

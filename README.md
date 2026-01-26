@@ -83,6 +83,13 @@ VoiDesk is a lightweight, blazingly fast code editor built with **Tauri 2.0** an
 - [ ] Git Integration
 - [ ] Plugin System
 
+## 📚 Project Documentation
+
+VoiDesk maintains comprehensive documentation of its development process:
+
+- **[Feature Logs](./feature-logs/)**: Detailed records of implementation sessions, architectural decisions, and technical details.
+- **[AGENTS.md](./AGENTS.md)**: AI agent architecture and capabilities.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

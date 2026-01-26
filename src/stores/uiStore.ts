@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-type Theme = "dark" | "light";
+export type Theme = "dark" | "light" | "obsidian";
+export type SettingsCategory = "appearance" | "ai" | "keybindings" | "editor";
 
 interface UIState {
     // Theme
@@ -18,6 +19,8 @@ interface UIState {
     isTerminalVisible: boolean;
     isCommandPaletteVisible: boolean;
     isSettingsVisible: boolean;
+    isSettingsPageOpen: boolean;
+    settingsCategory: SettingsCategory;
     commandPaletteMode: "command" | "file";
 
     // Actions
@@ -38,12 +41,17 @@ interface UIState {
     setCommandPaletteMode: (mode: "command" | "file") => void;
     openCommandPalette: (mode: "command" | "file") => void;
     closeCommandPalette: () => void;
+
+    // Settings Page
+    openSettingsPage: (category?: SettingsCategory) => void;
+    closeSettingsPage: () => void;
+    setSettingsCategory: (category: SettingsCategory) => void;
 }
 
 export const useUIStore = create<UIState>()(
     persist(
         (set, get) => ({
-            theme: "dark",
+            theme: "obsidian",
             sidebarWidth: 240,
             aiPanelWidth: 360,
             terminalHeight: 280,
@@ -52,11 +60,18 @@ export const useUIStore = create<UIState>()(
             isTerminalVisible: false,
             isCommandPaletteVisible: false,
             isSettingsVisible: false,
+            isSettingsPageOpen: false,
+            settingsCategory: "appearance",
             commandPaletteMode: "command",
 
             setTheme: (theme) => set({ theme }),
 
-            toggleTheme: () => set({ theme: get().theme === "dark" ? "light" : "dark" }),
+            toggleTheme: () => {
+                const themes: Theme[] = ["obsidian", "dark", "light"];
+                const currentIndex = themes.indexOf(get().theme);
+                const nextIndex = (currentIndex + 1) % themes.length;
+                set({ theme: themes[nextIndex] });
+            },
 
             setSidebarWidth: (width) => set({ sidebarWidth: Math.max(180, Math.min(400, width)) }),
 
@@ -74,9 +89,24 @@ export const useUIStore = create<UIState>()(
             setCommandPaletteMode: (mode) => set({ commandPaletteMode: mode }),
             openCommandPalette: (mode) => set({ isCommandPaletteVisible: true, commandPaletteMode: mode }),
             closeCommandPalette: () => set({ isCommandPaletteVisible: false }),
+
+            // Settings Page
+            openSettingsPage: (category) => set({ 
+                isSettingsPageOpen: true, 
+                settingsCategory: category || get().settingsCategory 
+            }),
+            closeSettingsPage: () => set({ isSettingsPageOpen: false }),
+            setSettingsCategory: (category) => set({ settingsCategory: category }),
         }),
         {
             name: "voidesk-ui-settings",
+            partialize: (state) => ({
+                theme: state.theme,
+                sidebarWidth: state.sidebarWidth,
+                aiPanelWidth: state.aiPanelWidth,
+                terminalHeight: state.terminalHeight,
+                isSidebarVisible: state.isSidebarVisible,
+            }),
         }
     )
 );

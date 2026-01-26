@@ -10,7 +10,7 @@ import { useFileStore } from "@/stores/fileStore";
 
 export function AIChat() {
     const { messages, isStreaming, sendMessage, stopStreaming, setMessages } = useAI();
-    const toggleSettings = useUIStore((state) => state.toggleSettings);
+    const openSettingsPage = useUIStore((state) => state.openSettingsPage);
 
     const [input, setInput] = useState("");
     const [showFileSearch, setShowFileSearch] = useState(false);
@@ -77,18 +77,18 @@ export function AIChat() {
     return (
         <div className="flex flex-col h-full bg-[var(--color-surface-base)]">
             {/* Header */}
-            <div className="panel-header border-b border-white/5 bg-[#0a0a0f] px-3 py-2 flex items-center justify-between">
+            <div className="panel-header border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 py-2 flex items-center justify-between">
                 <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-tertiary)]">
                     <Sparkles className="w-3.5 h-3.5 text-[var(--color-accent-primary)]" />
                     Assistant HUD
                 </span>
                 <div className="flex items-center gap-1">
                     {messages.length > 0 && (
-                        <button onClick={() => window.confirm("Clear history?") && clearChat()} className="icon-btn p-1.5 hover:bg-white/5 rounded">
+                        <button onClick={() => window.confirm("Clear history?") && clearChat()} className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded">
                             <Trash2 className="w-3.5 h-3.5 opacity-50" />
                         </button>
                     )}
-                    <button onClick={toggleSettings} className="icon-btn p-1.5 hover:bg-white/5 rounded">
+                    <button onClick={() => openSettingsPage("ai")} className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded" title="AI Settings">
                         <Settings2 className="w-3.5 h-3.5 opacity-50" />
                     </button>
                 </div>
@@ -105,8 +105,8 @@ export function AIChat() {
                     messages.map((msg, idx) => (
                         <div key={idx} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"} gap-3`}>
                             <div className={`max-w-[92%] rounded-xl px-4 py-3 text-[13px] leading-relaxed relative ${msg.role === "user"
-                                ? "bg-[var(--color-accent-primary)] text-white shadow-[0_4px_20px_rgba(99,102,241,0.2)]"
-                                : "bg-white/[0.03] border border-white/5 text-[var(--color-text-primary)]"
+                                ? "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] shadow-[0_4px_20px_rgba(99,102,241,0.2)]"
+                                : "bg-[var(--color-surface-overlay)] border border-[var(--color-border-subtle)] text-[var(--color-text-primary)]"
                                 }`}>
                                 {msg.toolOperations && <ToolOperationDisplay operations={msg.toolOperations} />}
                                 <MarkdownContent content={msg.content} />
@@ -123,14 +123,14 @@ export function AIChat() {
             </div>
 
             {/* Input & Search Area */}
-            <div className="relative border-t border-white/5 bg-[#0a0a0f]">
+            <div className="relative border-t border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)]">
                 {showFileSearch && (
-                    <div className="absolute bottom-full left-0 w-full max-h-64 overflow-y-auto bg-[#0d0d14] border-t border-white/10 shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50">
+                    <div className="absolute bottom-full left-0 w-full max-h-64 overflow-y-auto bg-[var(--color-surface-overlay)] border-t border-[var(--color-border-subtle)] shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50">
                         {filteredFiles.length > 0 ? filteredFiles.map(file => (
                             <button
                                 key={file}
                                 onClick={() => handleSelectFile(file)}
-                                className="w-full text-left px-4 py-2.5 text-xs hover:bg-[var(--color-accent-primary)] hover:text-white transition-all flex items-center gap-3 border-b border-white/[0.02]"
+                                className="w-full text-left px-4 py-2.5 text-xs hover:bg-[var(--color-accent-primary)] hover:text-[var(--color-surface-base)] transition-all flex items-center gap-3 border-b border-[var(--color-border-subtle)]"
                             >
                                 <FileIcon className="w-3.5 h-3.5 opacity-40" />
                                 <div className="flex flex-col truncate">
@@ -157,14 +157,14 @@ export function AIChat() {
                                 if (e.key === "Escape") setShowFileSearch(false);
                             }}
                             placeholder="Type @ to search files..."
-                            className="w-full bg-white/[0.03] border border-white/10 rounded-lg px-4 py-2.5 text-sm focus:border-[var(--color-accent-primary)] focus:bg-white/[0.05] outline-none transition-all placeholder:text-white/20"
+                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-primary)] focus:bg-[var(--color-void-700)] outline-none transition-all placeholder:text-[var(--color-text-muted)]"
                         />
                     </div>
                     <button
                         onClick={isStreaming ? handleStop : handleSend}
                         className={`p-2.5 rounded-lg transition-all shadow-lg ${isStreaming
                             ? "bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white"
-                            : "bg-[var(--color-accent-primary)] text-white hover:shadow-[0_0_20px_rgba(99,102,241,0.4)]"
+                            : "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] hover:shadow-[0_0_20px_rgba(99,102,241,0.4)]"
                             }`}
                     >
                         {isStreaming ? <StopCircle className="w-5 h-5" /> : <Send className="w-5 h-5" />}
@@ -180,9 +180,9 @@ function ContextPills() {
     if (contextPaths.length === 0) return null;
 
     return (
-        <div className="flex flex-wrap gap-2 px-4 py-2 bg-white/[0.01] border-b border-white/5 max-h-24 overflow-y-auto">
+        <div className="flex flex-wrap gap-2 px-4 py-2 bg-[var(--color-void-800)] border-b border-[var(--color-border-subtle)] max-h-24 overflow-y-auto">
             {contextPaths.map(path => (
-                <div key={path} className="flex items-center gap-2 px-2 py-1 rounded bg-white/[0.03] border border-white/10 text-[10px] text-white/50 group hover:border-[var(--color-accent-primary)]/50 transition-all">
+                <div key={path} className="flex items-center gap-2 px-2 py-1 rounded bg-[var(--color-void-700)] border border-[var(--color-border-subtle)] text-[10px] text-[var(--color-text-muted)] group hover:border-[var(--color-accent-primary)] transition-all">
                     <FileIcon className="w-3 h-3 text-[var(--color-accent-primary)] opacity-50" />
                     <span className="truncate max-w-[150px]">{path.split(/[/\\]/).pop()}</span>
                     <button onClick={() => removeContextPath(path)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1">
@@ -202,12 +202,12 @@ function MarkdownContent({ content }: { content: string }) {
                     code({ node, inline, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || "");
                         return !inline && match ? (
-                            <div className="my-4 rounded-lg overflow-hidden border border-white/10 bg-[#0d0d14] shadow-2xl">
-                                <div className="flex items-center justify-between px-4 py-2 bg-white/[0.03] border-b border-white/5 font-mono text-[9px] uppercase tracking-widest opacity-40">
+                            <div className="my-4 rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] shadow-2xl">
+                                <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-void-800)] border-b border-[var(--color-border-subtle)] font-mono text-[9px] uppercase tracking-widest opacity-70">
                                     <span>{match[1]}</span>
                                     <button
                                         onClick={() => navigator.clipboard.writeText(String(children).replace(/\n$/, ""))}
-                                        className="hover:text-white transition-colors font-bold"
+                                        className="hover:text-[var(--color-accent-primary)] transition-colors font-bold"
                                     >
                                         [COPY]
                                     </button>

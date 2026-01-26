@@ -4,6 +4,7 @@ import { useUIStore } from "@/stores/uiStore";
 import { useFileSystem } from "./useFileSystem";
 
 interface ShortcutHandler {
+    id: string;
     key: string;
     ctrl?: boolean;
     shift?: boolean;
@@ -13,7 +14,7 @@ interface ShortcutHandler {
 
 export function useKeyboard() {
     const { openFiles, currentFilePath } = useFileStore();
-    const { openCommandPalette } = useUIStore();
+    const { openCommandPalette, openSettingsPage, closeSettingsPage, isSettingsPageOpen, toggleSidebar, toggleAIPanel, toggleTerminal } = useUIStore();
     const { saveFile, openFolder } = useFileSystem();
 
     const currentFile = openFiles.find((f) => f.path === currentFilePath);
@@ -22,6 +23,7 @@ export function useKeyboard() {
     const shortcuts: ShortcutHandler[] = [
         // Save file (Ctrl+S)
         {
+            id: "save",
             key: "s",
             ctrl: true,
             action: async () => {
@@ -32,6 +34,7 @@ export function useKeyboard() {
         },
         // Open folder (Ctrl+O)
         {
+            id: "openFolder",
             key: "o",
             ctrl: true,
             action: async () => {
@@ -40,6 +43,7 @@ export function useKeyboard() {
         },
         // Close tab (Ctrl+W)
         {
+            id: "closeTab",
             key: "w",
             ctrl: true,
             action: () => {
@@ -50,6 +54,7 @@ export function useKeyboard() {
         },
         // Command Palette (Ctrl+Shift+P)
         {
+            id: "commandPalette",
             key: "p",
             ctrl: true,
             shift: true,
@@ -59,10 +64,58 @@ export function useKeyboard() {
         },
         // Quick File Open (Ctrl+P)
         {
+            id: "quickOpen",
             key: "p",
             ctrl: true,
             action: () => {
                 openCommandPalette("file");
+            },
+        },
+        // Open Settings (Ctrl+,)
+        {
+            id: "settings",
+            key: ",",
+            ctrl: true,
+            action: () => {
+                openSettingsPage();
+            },
+        },
+        // Toggle Sidebar (Ctrl+B)
+        {
+            id: "toggleSidebar",
+            key: "b",
+            ctrl: true,
+            action: () => {
+                toggleSidebar();
+            },
+        },
+        // Toggle AI Panel (Ctrl+Shift+L)
+        {
+            id: "toggleAIPanel",
+            key: "l",
+            ctrl: true,
+            shift: true,
+            action: () => {
+                toggleAIPanel();
+            },
+        },
+        // Toggle Terminal (Ctrl+`)
+        {
+            id: "toggleTerminal",
+            key: "`",
+            ctrl: true,
+            action: () => {
+                toggleTerminal();
+            },
+        },
+        // Close Settings Page (Escape)
+        {
+            id: "closeSettings",
+            key: "Escape",
+            action: () => {
+                if (isSettingsPageOpen) {
+                    closeSettingsPage();
+                }
             },
         },
     ];
@@ -82,7 +135,7 @@ export function useKeyboard() {
                 }
             }
         },
-        [currentFile, currentFilePath, saveFile, openFolder, openCommandPalette]
+        [currentFile, currentFilePath, saveFile, openFolder, openCommandPalette, openSettingsPage, closeSettingsPage, isSettingsPageOpen, toggleSidebar, toggleAIPanel, toggleTerminal]
     );
 
     useEffect(() => {

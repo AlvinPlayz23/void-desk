@@ -181,7 +181,7 @@ export function Sidebar() {
                         </p>
                         <button
                             onClick={handleOpenFolder}
-                            className="px-3 py-1.5 text-xs bg-[var(--color-accent-primary)] text-white rounded-md hover:opacity-90 transition-opacity"
+                            className="px-3 py-1.5 text-xs bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] rounded-md hover:opacity-90 transition-opacity"
                         >
                             Open Folder
                         </button>

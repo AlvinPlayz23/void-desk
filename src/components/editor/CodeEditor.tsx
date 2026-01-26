@@ -13,7 +13,6 @@ import {
     highlightSpecialChars,
 } from "@codemirror/view";
 import {
-    defaultKeymap,
     history,
     historyKeymap,
     indentWithTab,
@@ -40,10 +39,19 @@ import {
     searchKeymap,
     highlightSelectionMatches,
 } from "@codemirror/search";
+import { csharp } from "@replit/codemirror-lang-csharp";
+import { svelte } from "@replit/codemirror-lang-svelte";
+import { vscodeKeymap } from "@replit/codemirror-vscode-keymap";
+import interact from "@replit/codemirror-interact";
+import { showMinimap } from "@replit/codemirror-minimap";
 import { useFileStore } from "@/stores/fileStore";
 import { useEditorStore } from "@/stores/editorStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useUIStore } from "@/stores/uiStore";
 import { useLsp } from "@/hooks/useLsp";
-import { FileCode } from "lucide-react";
+import { useInlineCompletion } from "@/hooks/useInlineCompletion";
+import { ghostTextExtension, createGhostTextKeymap, setGhostText, clearGhostText, GhostTextCallbacks } from "./ghostText";
+import { FileCode, Loader2 } from "lucide-react";
 
 /**
  * Get the appropriate CodeMirror language extension based on file extension
@@ -72,6 +80,14 @@ function getLanguageExtension(filePath: string): Extension {
         // Rust
         case "rs":
             return rust();
+
+        // C#
+        case "cs":
+            return csharp();
+
+        // Svelte
+        case "svelte":
+            return svelte();
 
         // HTML
         case "html":
@@ -127,6 +143,8 @@ export function getLanguageName(filePath: string): string {
         pyw: "Python",
         pyi: "Python (Stub)",
         rs: "Rust",
+        cs: "C#",
+        svelte: "Svelte",
         html: "HTML",
         htm: "HTML",
         xhtml: "XHTML",
@@ -153,9 +171,36 @@ export function CodeEditor() {
     const viewRef = useRef<EditorView>();
     const { openFiles, currentFilePath, updateFileContent } = useFileStore();
     const { setCursor } = useEditorStore();
+    const { editorFontSize, editorFontFamily, tabSize, wordWrap, lineNumbers: showLineNumbers, minimap } = useSettingsStore();
+    const appTheme = useUIStore((state) => state.theme);
     const { didOpen, didChange, getCompletions, getHover } = useLsp();
+    const { completion, isLoading, requestCompletion, clearCompletion, acceptAll, acceptWord, hasCompletion } = useInlineCompletion();
 
     const currentFile = openFiles.find((f) => f.path === currentFilePath);
+
+    // Use a ref for callbacks so the keymap always has access to current functions
+    const ghostTextCallbacksRef = useRef<GhostTextCallbacks>({
+        onAcceptAll: () => null,
+        onAcceptWord: () => null,
+        onDismiss: () => {},
+        hasCompletion: () => false,
+    });
+
+    // Keep the ref updated with current functions
+    useEffect(() => {
+        ghostTextCallbacksRef.current = {
+            onAcceptAll: acceptAll,
+            onAcceptWord: acceptWord,
+            onDismiss: clearCompletion,
+            hasCompletion,
+        };
+    }, [acceptAll, acceptWord, clearCompletion, hasCompletion]);
+
+    // Create keymap once with ref - it will always use current callbacks
+    const ghostTextKeymapExt = useMemo(
+        () => createGhostTextKeymap(ghostTextCallbacksRef),
+        []
+    );
 
     // Debounced sync for LSP
     const syncLsp = useMemo(() => {
@@ -264,6 +309,12 @@ export function CodeEditor() {
                 const content = update.state.doc.toString();
                 updateFileContent(currentFile.path, content);
                 syncLsp(currentFile.path, content); // Sync LSP when doc changes
+                clearCompletion(); // Clear ghost text on any edit
+
+                // Request inline completion
+                const pos = update.state.selection.main.head;
+                const language = getLanguageName(currentFile.path);
+                requestCompletion(content, pos, currentFile.path, language);
             }
 
             // Update cursor position
@@ -275,7 +326,7 @@ export function CodeEditor() {
         const state = EditorState.create({
             doc: currentFile.content,
             extensions: [
-                lineNumbers(),
+                showLineNumbers ? lineNumbers() : [],
                 highlightActiveLineGutter(),
                 highlightSpecialChars(),
                 history(),
@@ -284,27 +335,59 @@ export function CodeEditor() {
                 dropCursor(),
                 EditorState.allowMultipleSelections.of(true),
                 indentOnInput(),
+                EditorState.tabSize.of(tabSize),
                 syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
                 bracketMatching(),
                 closeBrackets(),
                 rectangularSelection(),
                 crosshairCursor(),
                 highlightActiveLine(),
+                wordWrap ? EditorView.lineWrapping : [],
                 languageExtension, // Dynamic language based on file extension
-                oneDark,
+                // Only use oneDark theme for dark/obsidian themes
+                appTheme !== "light" ? oneDark : [],
                 // LSP-powered features
                 lspCompletionSource ? autocompletion({
                     override: [lspCompletionSource],
                     activateOnTyping: true,
                 }) : [],
                 lspHoverTooltip,
+                // Ghost text (inline AI completions)
+                ghostTextExtension(),
+                ghostTextKeymapExt,
                 search({
                     top: true, // Show search panel at top of editor
                 }),
                 highlightSelectionMatches(),
+                // Interact extension with number dragger
+                interact({
+                    rules: [
+                        {
+                            regexp: /-?\b\d+\.?\d*\b/g,
+                            cursor: "ew-resize",
+                            onDrag: (text, setText, e) => {
+                                const newVal = Number(text) + e.movementX;
+                                if (isNaN(newVal)) return;
+                                setText(newVal.toString());
+                            },
+                        }
+                    ],
+                }),
+                // Minimap (conditionally enabled)
+                minimap ? showMinimap.compute(['doc'], () => {
+                    return {
+                        create: () => {
+                            const dom = document.createElement('div');
+                            return { dom };
+                        },
+                        displayText: 'blocks',
+                        showOverlay: 'always',
+                    };
+                }) : [],
+                // Keymaps
                 keymap.of([
+                    ...vscodeKeymap,
                     ...closeBracketsKeymap,
-                    ...defaultKeymap,
                     ...historyKeymap,
                     ...searchKeymap,
                     indentWithTab,
@@ -313,11 +396,11 @@ export function CodeEditor() {
                 EditorView.theme({
                     "&": {
                         height: "100%",
-                        backgroundColor: "var(--color-surface-base)",
+                        backgroundColor: "var(--editor-bg, var(--color-surface-base))",
                     },
                     ".cm-content": {
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "13px",
+                        fontFamily: `'${editorFontFamily}', var(--font-mono)`,
+                        fontSize: `${editorFontSize}px`,
                         padding: "8px 0",
                     },
                     ".cm-line": {
@@ -337,7 +420,7 @@ export function CodeEditor() {
         return () => {
             view.destroy();
         };
-    }, [currentFile?.path]); // Only reinit when file changes
+    }, [currentFile?.path, editorFontSize, editorFontFamily, tabSize, wordWrap, showLineNumbers, minimap, appTheme]); // Reinit when file, settings, or theme change
 
     // Update content when file content changes externally
     useEffect(() => {
@@ -355,6 +438,24 @@ export function CodeEditor() {
         }
     }, [currentFile?.content]);
 
+    // Update ghost text when completion changes
+    useEffect(() => {
+        if (!viewRef.current) return;
+
+        const view = viewRef.current;
+        const pos = view.state.selection.main.head;
+
+        if (completion) {
+            view.dispatch({
+                effects: setGhostText.of({ text: completion, pos }),
+            });
+        } else {
+            view.dispatch({
+                effects: clearGhostText.of(undefined),
+            });
+        }
+    }, [completion]);
+
     if (!currentFile) {
         return (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--color-text-tertiary)]">
@@ -370,9 +471,17 @@ export function CodeEditor() {
     }
 
     return (
-        <div
-            ref={editorRef}
-            className="h-full w-full overflow-hidden"
-        />
+        <div className="relative h-full w-full">
+            <div
+                ref={editorRef}
+                className="h-full w-full overflow-hidden"
+            />
+            {isLoading && (
+                <div className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-[var(--color-void-800,#1a1a1a)] border border-[var(--color-border-subtle,#333)] rounded px-2 py-1 text-xs text-[var(--color-text-tertiary,#666)] shadow-lg">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>AI thinking...</span>
+                </div>
+            )}
+        </div>
     );
 }

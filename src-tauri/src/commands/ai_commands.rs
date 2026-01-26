@@ -378,3 +378,187 @@ pub async fn reset_ai_conversation() -> Result<(), String> {
     service.reset_session("default_user").await;
     Ok(())
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InlineCompletionChunk {
+    pub text: String,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+/// Get inline AI completion for code
+#[tauri::command]
+pub async fn get_inline_completion(
+    content: String,
+    cursor_pos: usize,
+    file_path: String,
+    language: String,
+    api_key: String,
+    base_url: String,
+    model_id: String,
+    on_event: Channel<InlineCompletionChunk>,
+) -> Result<(), String> {
+    let api_key = api_key.trim();
+    let model_id = model_id.trim();
+
+    if api_key.is_empty() {
+        on_event
+            .send(InlineCompletionChunk {
+                text: String::new(),
+                done: true,
+                error: Some("API key is required".to_string()),
+            })
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    // Build context: content before cursor and content after
+    let before = if cursor_pos <= content.len() {
+        &content[..cursor_pos]
+    } else {
+        &content
+    };
+    let after = if cursor_pos < content.len() {
+        &content[cursor_pos..]
+    } else {
+        ""
+    };
+
+    // Create a specialized completion prompt
+    let prompt = format!(
+        r#"You are an inline code completion assistant. Generate ONLY the code that should be inserted at the cursor position. Do not include explanations, markdown, or code blocks.
+
+Language: {language}
+File: {file_path}
+
+Code before cursor:
+```
+{before}
+```
+
+Code after cursor:
+```
+{after}
+```
+
+Generate a short, contextually appropriate completion (1-3 lines max). Output ONLY the raw code to insert, nothing else."#,
+        language = language,
+        file_path = file_path,
+        before = before,
+        after = after
+    );
+
+    // Create a lightweight agent without tools for completions
+    let api_base = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
+        base_url.trim_end_matches('/').to_string()
+    } else {
+        format!("{}/v1", base_url.trim_end_matches('/'))
+    };
+
+    let model = match adk_model::openai::OpenAIClient::compatible(api_key, &api_base, model_id) {
+        Ok(m) => m,
+        Err(e) => {
+            on_event
+                .send(InlineCompletionChunk {
+                    text: String::new(),
+                    done: true,
+                    error: Some(format!("Failed to create model: {}", e)),
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    };
+
+    let agent = match adk_agent::LlmAgentBuilder::new("inline_completion")
+        .instruction("You are an inline code completion assistant. Output ONLY raw code, no markdown, no explanations.")
+        .model(Arc::new(model))
+        .build()
+    {
+        Ok(a) => a,
+        Err(e) => {
+            on_event
+                .send(InlineCompletionChunk {
+                    text: String::new(),
+                    done: true,
+                    error: Some(format!("Failed to create agent: {}", e)),
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    };
+
+    // Create ephemeral session for this completion
+    let session_service = Arc::new(InMemorySessionService::new());
+    let session = session_service
+        .create(CreateRequest {
+            app_name: "voidesk_completion".to_string(),
+            user_id: "completion_user".to_string(),
+            session_id: None,
+            state: HashMap::new(),
+        })
+        .await
+        .map_err(|e| format!("Failed to create session: {}", e))?;
+
+    let runner = Runner::new(RunnerConfig {
+        app_name: "voidesk_completion".to_string(),
+        agent: Arc::new(agent),
+        session_service,
+        artifact_service: None,
+        memory_service: None,
+        run_config: None,
+    })
+    .map_err(|e| format!("Failed to create runner: {}", e))?;
+
+    let user_content = ai_service::create_user_content(&prompt);
+
+    let mut stream = runner
+        .run(
+            "completion_user".to_string(),
+            session.id().to_string(),
+            user_content,
+        )
+        .await
+        .map_err(|e| format!("Failed to run agent: {}", e))?;
+
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(e) => {
+                if let Some(content) = e.llm_response.content {
+                    for part in content.parts {
+                        if let Part::Text { text } = part {
+                            if !text.is_empty() {
+                                on_event
+                                    .send(InlineCompletionChunk {
+                                        text,
+                                        done: false,
+                                        error: None,
+                                    })
+                                    .map_err(|e| e.to_string())?;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                on_event
+                    .send(InlineCompletionChunk {
+                        text: String::new(),
+                        done: true,
+                        error: Some(format!("Stream error: {}", e)),
+                    })
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+        }
+    }
+
+    on_event
+        .send(InlineCompletionChunk {
+            text: String::new(),
+            done: true,
+            error: None,
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}

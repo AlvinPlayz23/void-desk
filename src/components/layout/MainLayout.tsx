@@ -8,8 +8,8 @@ import { EditorTabs } from "@/components/editor/EditorTabs";
 import { AIChat } from "@/components/ai/AIChat";
 import { TerminalComponent } from "@/components/terminal/TerminalComponent";
 import { CommandPalette } from "@/components/ui/CommandPalette";
-import { SettingsModal } from "@/components/ui/SettingsModal";
-import { MessageSquare, PanelLeftClose, PanelLeft, Terminal as TerminalIcon, X } from "lucide-react";
+import { SettingsPage } from "@/components/settings/SettingsPage";
+import { MessageSquare, PanelLeftClose, PanelLeft, Terminal as TerminalIcon, X, Settings as SettingsIcon } from "lucide-react";
 
 export function MainLayout() {
     const {
@@ -25,6 +25,7 @@ export function MainLayout() {
         toggleSidebar,
         toggleAIPanel,
         toggleTerminal,
+        openSettingsPage,
     } = useUIStore();
 
     const { openFiles } = useFileStore();
@@ -165,6 +166,13 @@ export function MainLayout() {
                             >
                                 <MessageSquare className="w-4 h-4" />
                             </button>
+                            <button
+                                onClick={() => openSettingsPage()}
+                                className="icon-btn"
+                                title="Settings"
+                            >
+                                <SettingsIcon className="w-4 h-4" />
+                            </button>
                         </div>
                     </div>
 
@@ -225,7 +233,7 @@ export function MainLayout() {
 
             {/* Global Overlay Components */}
             <CommandPalette />
-            <SettingsModal />
+            <SettingsPage />
         </div>
     );
 }
