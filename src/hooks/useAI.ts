@@ -18,8 +18,9 @@ export function useAI() {
     const { openAIKey, openAIBaseUrl, openAIModelId } = useSettingsStore();
     const { rootPath } = useFileStore();
     const { refreshFileTree } = useFileSystem();
-    const messages = useChatStore((state) => state.messages);
-    const { addMessage, appendToLastMessage, addToolOperation, updateLastMessage, setMessages } = useChatStore();
+    const messages = useChatStore((state) => state.currentMessages());
+    const activeSessionId = useChatStore((state) => state.activeSessionId);
+    const { addMessage, appendToLastMessage, addToolOperation, updateLastMessage } = useChatStore();
 
     // Store abort flag
     const abortRef = useRef(false);
@@ -45,7 +46,7 @@ export function useAI() {
             setIsStreaming(true);
 
             // Get context from attached files
-            const contextPaths = useChatStore.getState().contextPaths;
+            const contextPaths = useChatStore.getState().currentContextPaths();
             let contextContent = "";
 
             if (contextPaths.length > 0) {
@@ -81,7 +82,7 @@ export function useAI() {
 
                     if (chunk.error) {
                         updateLastMessage({
-                            content: useChatStore.getState().messages.slice(-1)[0].content + "\n\nError: " + chunk.error
+                            content: useChatStore.getState().currentMessages().slice(-1)[0].content + "\n\nError: " + chunk.error
                         });
                         return;
                     }
@@ -116,7 +117,9 @@ export function useAI() {
                     }
                 };
 
-                await invoke("ask_ai_stream", {
+                // Use session-aware command if session is active
+                await invoke("ask_ai_stream_with_session", {
+                    sessionId: activeSessionId || "",
                     message: fullMessage,
                     apiKey: openAIKey,
                     baseUrl: openAIBaseUrl,
@@ -133,11 +136,11 @@ export function useAI() {
                 abortRef.current = false;
             }
         },
-        [isStreaming, openAIKey, openAIBaseUrl, openAIModelId, rootPath, addMessage, appendToLastMessage, addToolOperation, updateLastMessage]
+        [isStreaming, activeSessionId, openAIKey, openAIBaseUrl, openAIModelId, rootPath, addMessage, appendToLastMessage, addToolOperation, updateLastMessage]
     );
 
     const retryLastMessage = useCallback(async () => {
-        const currentMessages = useChatStore.getState().messages;
+        const currentMessages = useChatStore.getState().currentMessages();
         if (currentMessages.length === 0) return;
 
         // Find last user message
@@ -147,13 +150,16 @@ export function useAI() {
         const actualIdx = currentMessages.length - 1 - lastUserMsgIdx;
         const lastUserContent = currentMessages[actualIdx].content;
 
-        // Remove all messages after the last user message inclusive
+        // Remove all messages after the last user message
+        useChatStore.getState().clearCurrentMessages();
         const keptMessages = currentMessages.slice(0, actualIdx);
-        setMessages(keptMessages);
+        
+        // Re-add kept messages manually
+        keptMessages.forEach(msg => useChatStore.getState().addMessage(msg));
 
         // Re-send
         await sendMessage(lastUserContent);
-    }, [sendMessage, setMessages]);
+    }, [sendMessage]);
 
     return {
         messages,
@@ -161,6 +167,5 @@ export function useAI() {
         sendMessage,
         retryLastMessage,
         stopStreaming,
-        setMessages,
     };
 }

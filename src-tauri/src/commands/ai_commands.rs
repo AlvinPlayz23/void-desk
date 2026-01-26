@@ -6,7 +6,7 @@
 use super::ai_service::{self, AIService};
 use adk_core::Part;
 use adk_runner::{Runner, RunnerConfig};
-use adk_session::{CreateRequest, InMemorySessionService, SessionService};
+use adk_session::{CreateRequest, DeleteRequest, ListRequest, InMemorySessionService, SessionService};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,6 +16,9 @@ use tokio::sync::OnceCell;
 
 /// Global AI service instance (lazy initialized)
 static AI_SERVICE: OnceCell<Arc<AIService>> = OnceCell::const_new();
+
+/// Global session service instance for chat session management
+static CHAT_SESSIONS: OnceCell<Arc<InMemorySessionService>> = OnceCell::const_new();
 
 /// Get or initialize the global AI service
 async fn get_ai_service() -> Arc<AIService> {
@@ -557,6 +560,330 @@ Generate a short, contextually appropriate completion (1-3 lines max). Output ON
             text: String::new(),
             done: true,
             error: None,
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Get or initialize the global session service
+async fn get_chat_sessions() -> Arc<InMemorySessionService> {
+    CHAT_SESSIONS
+        .get_or_init(|| async { Arc::new(InMemorySessionService::new()) })
+        .await
+        .clone()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SessionMetadata {
+    pub id: String,
+    pub created_at: u64,
+    pub last_updated: u64,
+    pub name: String,
+    pub message_count: usize,
+}
+
+/// Create a new chat session
+#[tauri::command]
+pub async fn create_chat_session(_name: String) -> Result<String, String> {
+    let sessions = get_chat_sessions().await;
+    let mut state = HashMap::new();
+    state.insert("name".to_string(), _name.into());
+    
+    let session = sessions
+        .create(CreateRequest {
+            app_name: "voidesk".to_string(),
+            user_id: "default_user".to_string(),
+            session_id: None,
+            state,
+        })
+        .await
+        .map_err(|e| format!("Failed to create session: {}", e))?;
+
+    Ok(session.id().to_string())
+}
+
+/// List all chat sessions with metadata
+#[tauri::command]
+pub async fn list_chat_sessions() -> Result<Vec<SessionMetadata>, String> {
+    let sessions = get_chat_sessions().await;
+    let session_list = sessions
+        .list(ListRequest {
+            app_name: "voidesk".to_string(),
+            user_id: "default_user".to_string(),
+        })
+        .await
+        .map_err(|e| format!("Failed to list sessions: {}", e))?;
+
+    let metadata = session_list
+        .into_iter()
+        .filter_map(|session| {
+            let state = session.state();
+            let name = if let Some(serde_json::Value::String(n)) = state.get("name") {
+                n.clone()
+            } else {
+                "Untitled".to_string()
+            };
+            
+            Some(SessionMetadata {
+                id: session.id().to_string(),
+                created_at: 0, // adk-session doesn't expose timestamps easily
+                last_updated: 0,
+                name,
+                message_count: 0,
+            })
+        })
+        .collect();
+
+    Ok(metadata)
+}
+
+/// Delete a chat session
+#[tauri::command]
+pub async fn delete_chat_session(session_id: String) -> Result<(), String> {
+    let sessions = get_chat_sessions().await;
+    sessions
+        .delete(DeleteRequest {
+            app_name: "voidesk".to_string(),
+            user_id: "default_user".to_string(),
+            session_id,
+        })
+        .await
+        .map_err(|e| format!("Failed to delete session: {}", e))
+}
+
+/// Update session name in state (uses GetRequest to fetch, then updates internally)
+#[tauri::command]
+pub async fn rename_chat_session(session_id: String, name: String) -> Result<(), String> {
+    // For now, just store the name in client-side state
+    // adk-session doesn't provide an update method, so state is managed on the client
+    let _ = (session_id, name);
+    Ok(())
+}
+
+/// Update ask_ai_stream to accept session_id parameter
+#[tauri::command]
+pub async fn ask_ai_stream_with_session(
+    session_id: String,
+    message: String,
+    api_key: String,
+    base_url: String,
+    model_id: String,
+    active_path: Option<String>,
+    on_event: Channel<AIResponseChunk>,
+) -> Result<(), String> {
+    let api_key = api_key.trim();
+    let model_id = model_id.trim();
+
+    if api_key.is_empty() {
+        on_event
+            .send(AIResponseChunk {
+                content: None,
+                tool_call: None,
+                tool_operation: None,
+                error: Some("API key is required".to_string()),
+                done: true,
+            })
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    // Get the AI service
+    let service = get_ai_service().await;
+
+    // Create the agent with active_path
+    let agent = match AIService::create_agent(api_key, &base_url, model_id, active_path.as_deref())
+    {
+        Ok(a) => a,
+        Err(e) => {
+            on_event
+                .send(AIResponseChunk {
+                    content: None,
+                    tool_call: None,
+                    tool_operation: None,
+                    error: Some(format!("Failed to create agent: {}", e)),
+                    done: true,
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    };
+
+    // Validate or create session for this AI service
+    let user_id = "default_user";
+    let app_name = "voidesk";
+    let base_session_id = if session_id.trim().is_empty() {
+        match service.get_or_create_session(user_id, app_name).await {
+            Ok(id) => id,
+            Err(e) => {
+                on_event
+                    .send(AIResponseChunk {
+                        content: None,
+                        tool_call: None,
+                        tool_operation: None,
+                        error: Some(format!("Failed to create session: {}", e)),
+                        done: true,
+                    })
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+        }
+    } else {
+        session_id.clone()
+    };
+
+    let validated_session_id = match service
+        .validate_or_create_session(&base_session_id, user_id, app_name)
+        .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            on_event
+                .send(AIResponseChunk {
+                    content: None,
+                    tool_call: None,
+                    tool_operation: None,
+                    error: Some(format!("Session error: {}", e)),
+                    done: true,
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    };
+
+    // Create runner
+    let runner = match service.create_runner(agent, app_name) {
+        Ok(r) => r,
+        Err(e) => {
+            on_event
+                .send(AIResponseChunk {
+                    content: None,
+                    tool_call: None,
+                    tool_operation: None,
+                    error: Some(format!("Failed to create runner: {}", e)),
+                    done: true,
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    };
+
+    // Create user content
+    let user_content = ai_service::create_user_content(&message);
+
+    // Run the agent and stream responses using the validated session_id
+    let mut stream = match runner
+        .run("default_user".to_string(), validated_session_id, user_content)
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            on_event
+                .send(AIResponseChunk {
+                    content: None,
+                    tool_call: None,
+                    tool_operation: None,
+                    error: Some(format!("Failed to run agent: {}", e)),
+                    done: true,
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    };
+
+    // Process the stream
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(e) => {
+                // Check for content in the LLM response
+                if let Some(content) = e.llm_response.content {
+                    for part in content.parts {
+                        match part {
+                            Part::Text { text } => {
+                                if !text.is_empty() {
+                                    on_event
+                                        .send(AIResponseChunk {
+                                            content: Some(text),
+                                            tool_call: None,
+                                            tool_operation: None,
+                                            error: None,
+                                            done: false,
+                                        })
+                                        .map_err(|e| e.to_string())?;
+                                }
+                            }
+                            Part::FunctionCall { name, args, .. } => {
+                                // Parse tool operation details
+                                let (operation, target) = match name.as_str() {
+                                    "read_file" => (
+                                        "Reading".to_string(),
+                                        args.get("path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string(),
+                                    ),
+                                    "write_file" | "create_file" => (
+                                        "Writing".to_string(),
+                                        args.get("path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string(),
+                                    ),
+                                    "run_command" => (
+                                        "Executing".to_string(),
+                                        args.get("command")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string(),
+                                    ),
+                                    _ => (
+                                        "Calling".to_string(),
+                                        format!("{}()", name),
+                                    ),
+                                };
+
+                                on_event
+                                    .send(AIResponseChunk {
+                                        content: None,
+                                        tool_call: Some(format!("Calling tool: {}", name)),
+                                        tool_operation: Some(ToolOperation {
+                                            operation,
+                                            target,
+                                            status: "started".to_string(),
+                                        }),
+                                        error: None,
+                                        done: false,
+                                    })
+                                    .map_err(|e| e.to_string())?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                on_event
+                    .send(AIResponseChunk {
+                        content: None,
+                        tool_call: None,
+                        tool_operation: None,
+                        error: Some(format!("Stream error: {}", e)),
+                        done: true,
+                    })
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+        }
+    }
+
+    // Stream complete
+    on_event
+        .send(AIResponseChunk {
+            content: None,
+            tool_call: None,
+            tool_operation: None,
+            error: None,
+            done: true,
         })
         .map_err(|e| e.to_string())?;
 

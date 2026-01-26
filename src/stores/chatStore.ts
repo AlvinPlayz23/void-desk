@@ -15,19 +15,39 @@ export interface Message {
     timestamp: number;
 }
 
-interface ChatState {
+export interface ChatSession {
+    id: string;
+    name: string;
     messages: Message[];
     contextPaths: string[];
+    createdAt: number;
+    lastUpdated: number;
+}
 
-    // Actions
+interface ChatState {
+    sessions: ChatSession[];
+    activeSessionId: string | null;
+
+    // Current session helpers
+    currentSession: () => ChatSession | null;
+    currentMessages: () => Message[];
+    currentContextPaths: () => string[];
+
+    // Session management
+    createSession: (name: string) => string;
+    deleteSession: (id: string) => void;
+    switchSession: (id: string) => void;
+    renameSession: (id: string, name: string) => void;
+
+    // Message management
     addMessage: (message: Message) => void;
     updateLastMessage: (updates: Partial<Message>) => void;
     appendToLastMessage: (text: string) => void;
     addToolOperation: (operation: ToolOperation) => void;
-    setMessages: (messages: Message[]) => void;
     removeLastMessage: () => void;
-    clearMessages: () => void;
+    clearCurrentMessages: () => void;
 
+    // Context management
     addContextPath: (path: string) => void;
     removeContextPath: (path: string) => void;
     clearContextPaths: () => void;
@@ -35,54 +55,142 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>()(
     persist(
-        (set) => ({
-            messages: [],
-            contextPaths: [],
+        (set, get) => ({
+            sessions: [],
+            activeSessionId: null,
 
-            addMessage: (message) =>
+            currentSession: () => {
+                const state = get();
+                if (!state.activeSessionId) return null;
+                return state.sessions.find((s) => s.id === state.activeSessionId) || null;
+            },
+
+            currentMessages: () => {
+                const current = get().currentSession();
+                return current?.messages || [];
+            },
+
+            currentContextPaths: () => {
+                const current = get().currentSession();
+                return current?.contextPaths || [];
+            },
+
+            createSession: (name: string) => {
+                const id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const newSession: ChatSession = {
+                    id,
+                    name,
+                    messages: [],
+                    contextPaths: [],
+                    createdAt: Date.now(),
+                    lastUpdated: Date.now(),
+                };
+
                 set((state) => ({
-                    messages: [...state.messages, message],
-                })),
+                    sessions: [...state.sessions, newSession],
+                    activeSessionId: id,
+                }));
 
-            updateLastMessage: (updates) =>
+                return id;
+            },
+
+            deleteSession: (id: string) => {
                 set((state) => {
-                    if (state.messages.length === 0) return state;
-                    const lastIndex = state.messages.length - 1;
-                    const newMessages = [...state.messages];
+                    const sessions = state.sessions.filter((s) => s.id !== id);
+                    const activeSessionId =
+                        state.activeSessionId === id ? (sessions[0]?.id || null) : state.activeSessionId;
+
+                    return {
+                        sessions,
+                        activeSessionId,
+                    };
+                });
+            },
+
+            switchSession: (id: string) => {
+                set((state) => ({
+                    activeSessionId: state.sessions.find((s) => s.id === id) ? id : state.activeSessionId,
+                }));
+            },
+
+            renameSession: (id: string, name: string) => {
+                set((state) => ({
+                    sessions: state.sessions.map((s) => (s.id === id ? { ...s, name } : s)),
+                }));
+            },
+
+            addMessage: (message: Message) => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
+
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id
+                                ? { ...s, messages: [...s.messages, message], lastUpdated: Date.now() }
+                                : s
+                        ),
+                    };
+                });
+            },
+
+            updateLastMessage: (updates) => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current || current.messages.length === 0) return state;
+
+                    const lastIndex = current.messages.length - 1;
+                    const newMessages = [...current.messages];
                     newMessages[lastIndex] = { ...newMessages[lastIndex], ...updates };
-                    return { messages: newMessages };
-                }),
 
-            appendToLastMessage: (text) =>
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id
+                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
+                                : s
+                        ),
+                    };
+                });
+            },
+
+            appendToLastMessage: (text) => {
                 set((state) => {
-                    if (state.messages.length === 0) return state;
-                    const lastIndex = state.messages.length - 1;
-                    const newMessages = [...state.messages];
+                    const current = state.currentSession();
+                    if (!current || current.messages.length === 0) return state;
+
+                    const lastIndex = current.messages.length - 1;
+                    const newMessages = [...current.messages];
                     newMessages[lastIndex] = {
                         ...newMessages[lastIndex],
                         content: newMessages[lastIndex].content + text,
                     };
-                    return { messages: newMessages };
-                }),
 
-            addToolOperation: (operation) =>
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id
+                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
+                                : s
+                        ),
+                    };
+                });
+            },
+
+            addToolOperation: (operation) => {
                 set((state) => {
-                    if (state.messages.length === 0) return state;
-                    const lastIndex = state.messages.length - 1;
-                    const newMessages = [...state.messages];
+                    const current = state.currentSession();
+                    if (!current || current.messages.length === 0) return state;
+
+                    const lastIndex = current.messages.length - 1;
+                    const newMessages = [...current.messages];
                     const ops = [...(newMessages[lastIndex].toolOperations || [])];
 
-                    // Find if an operation with same operation type AND target exists
-                    const existingIdx = ops.findIndex(op =>
-                        op.operation === operation.operation &&
-                        op.target === operation.target
+                    const existingIdx = ops.findIndex(
+                        (op) => op.operation === operation.operation && op.target === operation.target
                     );
 
                     if (existingIdx !== -1) {
-                        // Update existing operation (merge status)
                         ops[existingIdx] = { ...ops[existingIdx], ...operation };
                     } else {
-                        // Add new operation
                         ops.push(operation);
                     }
 
@@ -90,34 +198,90 @@ export const useChatStore = create<ChatState>()(
                         ...newMessages[lastIndex],
                         toolOperations: ops,
                     };
-                    return { messages: newMessages };
-                }),
 
-            setMessages: (messages) => set({ messages }),
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id
+                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
+                                : s
+                        ),
+                    };
+                });
+            },
 
-            removeLastMessage: () =>
-                set((state) => ({
-                    messages: state.messages.slice(0, -1)
-                })),
+            removeLastMessage: () => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
 
-            clearMessages: () => set({ messages: [] }),
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id ? { ...s, messages: s.messages.slice(0, -1) } : s
+                        ),
+                    };
+                });
+            },
 
-            addContextPath: (path) =>
-                set((state) => ({
-                    contextPaths: state.contextPaths.includes(path)
-                        ? state.contextPaths
-                        : [...state.contextPaths, path],
-                })),
+            clearCurrentMessages: () => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
 
-            removeContextPath: (path) =>
-                set((state) => ({
-                    contextPaths: state.contextPaths.filter((p) => p !== path),
-                })),
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id ? { ...s, messages: [] } : s
+                        ),
+                    };
+                });
+            },
 
-            clearContextPaths: () => set({ contextPaths: [] }),
+            addContextPath: (path: string) => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
+
+                    const paths = current.contextPaths.includes(path)
+                        ? current.contextPaths
+                        : [...current.contextPaths, path];
+
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id ? { ...s, contextPaths: paths } : s
+                        ),
+                    };
+                });
+            },
+
+            removeContextPath: (path: string) => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
+
+                    const paths = current.contextPaths.filter((p) => p !== path);
+
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id ? { ...s, contextPaths: paths } : s
+                        ),
+                    };
+                });
+            },
+
+            clearContextPaths: () => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
+
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id ? { ...s, contextPaths: [] } : s
+                        ),
+                    };
+                });
+            },
         }),
         {
-            name: "voiddesk-chat-history",
+            name: "voiddesk-chat-sessions",
         }
     )
 );

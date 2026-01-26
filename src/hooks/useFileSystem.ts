@@ -183,6 +183,64 @@ export function useFileSystem() {
         }
     };
 
+    const renameFile = async (oldPath: string, newPath: string): Promise<boolean> => {
+        try {
+            await invoke("rename_file", { oldPath, newPath });
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
+            return true;
+        } catch (error) {
+            console.error("Failed to rename file:", error);
+            return false;
+        }
+    };
+
+    interface BatchOperationResult {
+        path: string;
+        success: boolean;
+        error?: string;
+    }
+
+    const batchDeleteFiles = async (paths: string[]): Promise<BatchOperationResult[]> => {
+        try {
+            const results = await invoke<BatchOperationResult[]>("batch_delete_files", { paths });
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
+            return results;
+        } catch (error) {
+            console.error("Failed to batch delete files:", error);
+            return paths.map(path => ({
+                path,
+                success: false,
+                error: String(error)
+            }));
+        }
+    };
+
+    interface BatchMoveOperation {
+        from: string;
+        to: string;
+    }
+
+    const batchMoveFiles = async (operations: BatchMoveOperation[]): Promise<BatchOperationResult[]> => {
+        try {
+            const results = await invoke<BatchOperationResult[]>("batch_move_files", { operations });
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
+            return results;
+        } catch (error) {
+            console.error("Failed to batch move files:", error);
+            return operations.map(op => ({
+                path: op.from,
+                success: false,
+                error: String(error)
+            }));
+        }
+    };
+
     return {
         rootPath,
         openFolder,
@@ -192,6 +250,9 @@ export function useFileSystem() {
         writeFile,
         deleteFile,
         moveItem,
+        renameFile,
+        batchDeleteFiles,
+        batchMoveFiles,
         revealInExplorer,
         openFileInEditor,
         saveFile,

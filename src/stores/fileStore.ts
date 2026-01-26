@@ -16,6 +16,18 @@ export interface OpenFile {
     language: string;
 }
 
+// Helper to flatten tree for range selection
+function flattenTree(nodes: FileNode[]): string[] {
+    const result: string[] = [];
+    for (const node of nodes) {
+        result.push(node.path);
+        if (node.isDir && node.isExpanded && node.children) {
+            result.push(...flattenTree(node.children));
+        }
+    }
+    return result;
+}
+
 interface FileState {
     // Project structure
     rootPath: string | null;
@@ -24,6 +36,10 @@ interface FileState {
     // Open files
     openFiles: OpenFile[];
     currentFilePath: string | null;
+
+    // Multi-select state
+    selectedPaths: string[];
+    lastSelectedPath: string | null;
 
     // Actions
     setRootPath: (path: string) => void;
@@ -35,6 +51,12 @@ interface FileState {
     setCurrentFile: (path: string) => void;
     updateFileContent: (path: string, content: string) => void;
     markFileSaved: (path: string) => void;
+
+    // Multi-select actions
+    setSelectedPaths: (paths: string[]) => void;
+    toggleSelection: (path: string) => void;
+    selectRange: (endPath: string) => void;
+    clearSelection: () => void;
 }
 
 export const useFileStore = create<FileState>((set, get) => ({
@@ -42,6 +64,8 @@ export const useFileStore = create<FileState>((set, get) => ({
     fileTree: [],
     openFiles: [],
     currentFilePath: null,
+    selectedPaths: [],
+    lastSelectedPath: null,
 
     setRootPath: (path) => set({ rootPath: path }),
 
@@ -109,4 +133,48 @@ export const useFileStore = create<FileState>((set, get) => ({
             ),
         });
     },
+
+    // Multi-select actions
+    setSelectedPaths: (paths) => set({
+        selectedPaths: paths,
+        lastSelectedPath: paths.length > 0 ? paths[paths.length - 1] : null
+    }),
+
+    toggleSelection: (path) => {
+        const { selectedPaths } = get();
+        const isSelected = selectedPaths.includes(path);
+        if (isSelected) {
+            set({
+                selectedPaths: selectedPaths.filter(p => p !== path),
+            });
+        } else {
+            set({
+                selectedPaths: [...selectedPaths, path],
+                lastSelectedPath: path,
+            });
+        }
+    },
+
+    selectRange: (endPath) => {
+        const { lastSelectedPath, fileTree } = get();
+        if (!lastSelectedPath) {
+            set({ selectedPaths: [endPath], lastSelectedPath: endPath });
+            return;
+        }
+
+        const flat = flattenTree(fileTree);
+        const startIdx = flat.indexOf(lastSelectedPath);
+        const endIdx = flat.indexOf(endPath);
+
+        if (startIdx === -1 || endIdx === -1) {
+            set({ selectedPaths: [endPath], lastSelectedPath: endPath });
+            return;
+        }
+
+        const [from, to] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+        const range = flat.slice(from, to + 1);
+        set({ selectedPaths: range, lastSelectedPath: endPath });
+    },
+
+    clearSelection: () => set({ selectedPaths: [], lastSelectedPath: null }),
 }));

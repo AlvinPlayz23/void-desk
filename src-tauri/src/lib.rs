@@ -16,25 +16,39 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
+            // File operations
             file_commands::read_file,
             file_commands::write_file,
             file_commands::delete_file,
             file_commands::create_directory,
             file_commands::move_file,
             file_commands::reveal_in_file_explorer,
+            file_commands::rename_file,
+            file_commands::batch_delete_files,
+            file_commands::batch_move_files,
+            // Project operations
             project_commands::list_directory,
             project_commands::get_project_tree,
+            // AI operations
             ai_commands::ask_ai_stream,
+            ai_commands::ask_ai_stream_with_session,
             ai_commands::test_ai_connection,
             ai_commands::reset_ai_conversation,
             ai_commands::get_inline_completion,
+            ai_commands::create_chat_session,
+            ai_commands::list_chat_sessions,
+            ai_commands::delete_chat_session,
+            ai_commands::rename_chat_session,
+            // File watcher
             file_watcher::start_file_watcher,
             file_watcher::stop_file_watcher,
             file_watcher::is_watching,
+            // Terminal
             terminal::create_pty,
             terminal::write_to_pty,
             terminal::resize_pty,
             terminal::close_pty,
+            // LSP
             lsp_commands::lsp_set_root,
             lsp_commands::lsp_did_open,
             lsp_commands::lsp_did_change,

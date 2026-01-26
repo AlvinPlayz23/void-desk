@@ -7,7 +7,7 @@ use adk_agent::LlmAgentBuilder;
 use adk_core::Content;
 use adk_model::openai::OpenAIClient;
 use adk_runner::{Runner, RunnerConfig};
-use adk_session::{CreateRequest, InMemorySessionService, SessionService};
+use adk_session::{CreateRequest, GetRequest, InMemorySessionService, SessionService};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -179,6 +179,41 @@ Remember: You're not just a chatbot - you're a hands-on coding partner with actu
     pub async fn reset_session(&self, user_id: &str) {
         let mut sessions = self.user_sessions.write().await;
         sessions.remove(user_id);
+    }
+
+    /// Validate or create a session ID in this service's session store
+    pub async fn validate_or_create_session(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        app_name: &str,
+    ) -> Result<String, String> {
+        match self
+            .session_service
+            .get(GetRequest {
+                app_name: app_name.to_string(),
+                user_id: user_id.to_string(),
+                session_id: session_id.to_string(),
+                after: None,
+                num_recent_events: None,
+            })
+            .await
+        {
+            Ok(_) => Ok(session_id.to_string()),
+            Err(_) => {
+                let session = self
+                    .session_service
+                    .create(CreateRequest {
+                        app_name: app_name.to_string(),
+                        user_id: user_id.to_string(),
+                        session_id: Some(session_id.to_string()),
+                        state: HashMap::new(),
+                    })
+                    .await
+                    .map_err(|e| format!("Failed to recreate session: {}", e))?;
+                Ok(session.id().to_string())
+            }
+        }
     }
 }
 

@@ -36,6 +36,65 @@ pub async fn move_file(from: String, to: String) -> Result<(), String> {
     fs::rename(from, to).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    fs::rename(&old_path, &new_path).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct BatchOperationResult {
+    pub path: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn batch_delete_files(paths: Vec<String>) -> Result<Vec<BatchOperationResult>, String> {
+    let mut results = Vec::new();
+    
+    for path in paths {
+        let path_obj = Path::new(&path);
+        let result = if path_obj.is_dir() {
+            fs::remove_dir_all(path_obj)
+        } else {
+            fs::remove_file(path_obj)
+        };
+        
+        results.push(BatchOperationResult {
+            path: path.clone(),
+            success: result.is_ok(),
+            error: result.err().map(|e| e.to_string()),
+        });
+    }
+    
+    Ok(results)
+}
+
+#[derive(serde::Deserialize)]
+pub struct BatchMoveOperation {
+    pub from: String,
+    pub to: String,
+}
+
+#[tauri::command]
+pub async fn batch_move_files(
+    operations: Vec<BatchMoveOperation>,
+) -> Result<Vec<BatchOperationResult>, String> {
+    let mut results = Vec::new();
+    
+    for op in operations {
+        let result = fs::rename(&op.from, &op.to);
+        
+        results.push(BatchOperationResult {
+            path: op.from,
+            success: result.is_ok(),
+            error: result.err().map(|e| e.to_string()),
+        });
+    }
+    
+    Ok(results)
+}
+
 /// Reveal a file or folder in the system's file explorer
 /// Windows: opens explorer with the file selected
 /// macOS: uses open -R to reveal in Finder

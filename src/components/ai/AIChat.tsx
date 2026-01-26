@@ -1,22 +1,78 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon } from "lucide-react";
+import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon, Plus, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { invoke } from "@tauri-apps/api/core";
 import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
 import { ToolOperation, useChatStore } from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
 
 export function AIChat() {
-    const { messages, isStreaming, sendMessage, stopStreaming, setMessages } = useAI();
+    const { messages, isStreaming, sendMessage, stopStreaming } = useAI();
     const openSettingsPage = useUIStore((state) => state.openSettingsPage);
+    const { createSession, deleteSession, switchSession, activeSessionId } = useChatStore();
 
     const [input, setInput] = useState("");
     const [showFileSearch, setShowFileSearch] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [showSessions, setShowSessions] = useState(false);
+    const [sessions, setSessions] = useState<any[]>([]);
     const { fileTree } = useFileStore();
     const scrollRef = useRef<HTMLDivElement>(null);
+    const sessionsRef = useRef<HTMLDivElement>(null);
+
+    // Initialize first session
+    useEffect(() => {
+        if (!activeSessionId) {
+            createSession("New Chat");
+        }
+    }, []);
+
+    // Load sessions
+    useEffect(() => {
+        loadSessions();
+    }, []);
+
+    const loadSessions = async () => {
+        try {
+            const list = await invoke<any[]>("list_chat_sessions");
+            setSessions(list);
+        } catch (error) {
+            console.error("Failed to load sessions:", error);
+        }
+    };
+
+    const handleNewSession = () => {
+        const id = createSession("New Chat");
+        switchSession(id);
+        loadSessions();
+        setShowSessions(false);
+    };
+
+    const handleDeleteSession = async (id: string) => {
+        if (window.confirm("Delete this chat session?")) {
+            deleteSession(id);
+            try {
+                await invoke("delete_chat_session", { session_id: id });
+            } catch (error) {
+                console.error("Failed to delete session from backend:", error);
+            }
+            await loadSessions();
+        }
+    };
+
+    // Close sessions menu when clicking outside
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (sessionsRef.current && !sessionsRef.current.contains(e.target as Node)) {
+                setShowSessions(false);
+            }
+        };
+        document.addEventListener("click", handleClick);
+        return () => document.removeEventListener("click", handleClick);
+    }, []);
 
     // Flatten file tree for searching
     const allFiles = useMemo(() => {
@@ -51,7 +107,7 @@ export function AIChat() {
     };
 
     const handleStop = () => stopStreaming();
-    const clearChat = () => setMessages([]);
+    const clearChat = () => useChatStore.getState().clearCurrentMessages();
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
@@ -70,19 +126,62 @@ export function AIChat() {
         const atIndex = input.lastIndexOf("@");
         const newVal = input.substring(0, atIndex) + " ";
         setInput(newVal);
-        useChatStore.getState().addContextPath(path);
+        const state = useChatStore.getState();
+        state.addContextPath(path);
         setShowFileSearch(false);
     };
+
+    const currentSessionName = useChatStore((state) => state.currentSession()?.name || "Chat");
 
     return (
         <div className="flex flex-col h-full bg-[var(--color-surface-base)]">
             {/* Header */}
             <div className="panel-header border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 py-2 flex items-center justify-between">
-                <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-tertiary)]">
+                <div className="flex items-center gap-2">
                     <Sparkles className="w-3.5 h-3.5 text-[var(--color-accent-primary)]" />
-                    Assistant HUD
-                </span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-tertiary)] hidden md:inline">
+                        {currentSessionName}
+                    </span>
+                </div>
                 <div className="flex items-center gap-1">
+                    <div className="relative" ref={sessionsRef}>
+                        <button
+                            onClick={() => setShowSessions(!showSessions)}
+                            className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded flex items-center gap-1 text-[10px]"
+                            title="Sessions"
+                        >
+                            <ChevronDown className={`w-3.5 h-3.5 opacity-50 transition-transform ${showSessions ? "rotate-180" : ""}`} />
+                        </button>
+                        {showSessions && (
+                            <div className="absolute right-0 top-full mt-2 w-48 max-h-96 overflow-y-auto bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg shadow-xl z-50">
+                                <button
+                                    onClick={handleNewSession}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)]"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    New Chat
+                                </button>
+                                {sessions.map(session => (
+                                    <button
+                                        key={session.id}
+                                        onClick={() => { switchSession(session.id); setShowSessions(false); }}
+                                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] group ${activeSessionId === session.id ? "bg-[var(--color-void-700)] text-[var(--color-accent-primary)]" : ""}`}
+                                    >
+                                        <div className="flex-1 truncate">
+                                            <div className="truncate font-medium">{session.name}</div>
+                                            <div className="text-[9px] opacity-30">{new Date(session.created_at * 1000).toLocaleDateString()}</div>
+                                        </div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id); }}
+                                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                     {messages.length > 0 && (
                         <button onClick={() => window.confirm("Clear history?") && clearChat()} className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded">
                             <Trash2 className="w-3.5 h-3.5 opacity-50" />
@@ -176,7 +275,8 @@ export function AIChat() {
 }
 
 function ContextPills() {
-    const { contextPaths, removeContextPath } = useChatStore();
+    const contextPaths = useChatStore((state) => state.currentContextPaths());
+    const { removeContextPath } = useChatStore();
     if (contextPaths.length === 0) return null;
 
     return (

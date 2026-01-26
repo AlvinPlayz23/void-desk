@@ -15,6 +15,7 @@ import {
     Copy,
     ExternalLink,
     Trash2,
+    Edit2,
 } from "lucide-react";
 
 interface FileItemProps {
@@ -24,9 +25,17 @@ interface FileItemProps {
 }
 
 export function FileItem({ node, depth, onClick }: FileItemProps) {
-    const { currentFilePath } = useFileStore();
-    const { revealInExplorer, deleteFile, moveItem, refreshFileTree, rootPath } = useFileSystem();
+    const {
+        currentFilePath,
+        selectedPaths,
+        setSelectedPaths,
+        toggleSelection,
+        selectRange,
+        lastSelectedPath,
+    } = useFileStore();
+    const { revealInExplorer, deleteFile, moveItem, renameFile, batchDeleteFiles, batchMoveFiles, refreshFileTree, rootPath } = useFileSystem();
     const isSelected = currentFilePath === node.path;
+    const isMultiSelected = selectedPaths.includes(node.path);
     const [isDragOver, setIsDragOver] = useState(false);
 
     const [contextMenu, setContextMenu] = useState<{
@@ -34,12 +43,16 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         y: number;
         node: FileNode;
     } | null>(null);
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState("");
     const menuRef = useRef<HTMLDivElement>(null);
+    const renameInputRef = useRef<HTMLInputElement>(null);
 
     const handleDragStart = (e: React.DragEvent) => {
         e.stopPropagation();
         console.log("Drag start:", node.path);
-        e.dataTransfer.setData("text/plain", node.path);
+        const sourcePaths = selectedPaths.includes(node.path) ? selectedPaths : [node.path];
+        e.dataTransfer.setData("text/plain", JSON.stringify(sourcePaths));
         e.dataTransfer.effectAllowed = "move";
 
         // Add a custom drag image effect by setting opacity via CSS class
@@ -64,9 +77,18 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
             e.stopPropagation();
 
             // Get the source path to check if we're dragging into ourselves
-            const sourcePath = e.dataTransfer.types.includes("text/plain")
+            const raw = e.dataTransfer.types.includes("text/plain")
                 ? e.dataTransfer.getData("text/plain")
                 : null;
+            let sourcePath: string | null = null;
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    sourcePath = Array.isArray(parsed) ? parsed[0] : raw;
+                } catch {
+                    sourcePath = raw;
+                }
+            }
 
             // Only show drop indicator if this is a valid target
             if (!sourcePath || (sourcePath !== node.path && !node.path.startsWith(sourcePath + "\\"))) {
@@ -104,33 +126,47 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
 
         if (!node.isDir) return;
 
-        const sourcePath = e.dataTransfer.getData("text/plain");
-        console.log("Drop detected. Source:", sourcePath, "Target Dir:", node.path);
+        const raw = e.dataTransfer.getData("text/plain");
+        if (!raw) return;
 
-        // Validate the move operation
-        if (!sourcePath) return;
-        if (sourcePath === node.path) return; // Can't drop on itself
-        if (node.path.startsWith(sourcePath + "\\") || node.path.startsWith(sourcePath + "/")) {
-            console.warn("Cannot move a folder into itself");
-            return;
+        let sourcePaths: string[] = [];
+        try {
+            const parsed = JSON.parse(raw);
+            sourcePaths = Array.isArray(parsed) ? parsed : [raw];
+        } catch {
+            sourcePaths = [raw];
         }
 
-        const parts = sourcePath.split(/[/\\]/);
-        const fileName = parts.pop() || "";
+        console.log("Move detected. Target Dir:", node.path, "Sources:", sourcePaths);
+
+        const operations: { from: string; to: string }[] = [];
         const separator = node.path.includes('\\') ? '\\' : '/';
-        const targetPath = `${node.path}${separator}${fileName}`;
 
-        // Check if already in this folder
-        const sourceDir = sourcePath.substring(0, sourcePath.lastIndexOf(separator));
-        if (sourceDir === node.path) {
-            console.log("Already in target folder");
-            return;
+        for (const src of sourcePaths) {
+            if (src === node.path) continue; // Can't move onto itself
+            if (node.path.startsWith(src + "\\") || node.path.startsWith(src + "/")) {
+                console.warn(`Cannot move ${src} into its own subdirectory`);
+                continue;
+            }
+
+            const parts = src.split(/[/\\]/);
+            const fileName = parts.pop() || "";
+            const targetPath = `${node.path}${separator}${fileName}`;
+
+            // Check if already in this folder
+            const sourceDir = src.substring(0, src.lastIndexOf(separator));
+            if (sourceDir !== node.path) {
+                operations.push({ from: src, to: targetPath });
+            }
         }
 
-        console.log("Moving to:", targetPath);
-        const success = await moveItem(sourcePath, targetPath);
-        if (!success) {
-            console.error("Move failed from", sourcePath, "to", targetPath);
+        if (operations.length === 0) return;
+
+        console.log("Moving items...", operations);
+        if (operations.length === 1) {
+            await moveItem(operations[0].from, operations[0].to);
+        } else {
+            await batchMoveFiles(operations);
         }
     };
 
@@ -147,6 +183,9 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
 
     const handleContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
+        if (!selectedPaths.includes(node.path)) {
+            setSelectedPaths([node.path]);
+        }
         setContextMenu({
             x: e.clientX,
             y: e.clientY,
@@ -170,16 +209,67 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
 
     const handleDelete = async () => {
         if (contextMenu) {
-            const confirmed = window.confirm(
-                `Are you sure you want to delete "${contextMenu.node.name}"?`
-            );
+            const isTargetInSelection = selectedPaths.includes(contextMenu.node.path);
+            const targets = isTargetInSelection ? selectedPaths : [contextMenu.node.path];
+
+            const message = targets.length > 1
+                ? `Are you sure you want to delete ${targets.length} selected items?`
+                : `Are you sure you want to delete "${contextMenu.node.name}"?`;
+
+            const confirmed = window.confirm(message);
             if (confirmed) {
-                await deleteFile(contextMenu.node.path);
+                if (targets.length > 1) {
+                    await batchDeleteFiles(targets);
+                } else {
+                    await deleteFile(targets[0]);
+                }
+
                 if (rootPath) {
                     await refreshFileTree(rootPath);
                 }
             }
             setContextMenu(null);
+        }
+    };
+
+    const handleRenameClick = () => {
+        if (contextMenu) {
+            setRenameValue(contextMenu.node.name);
+            setIsRenaming(true);
+            setContextMenu(null);
+        }
+    };
+
+    const handleRenameSubmit = async () => {
+        if (!renameValue.trim() || renameValue === node.name) {
+            setIsRenaming(false);
+            return;
+        }
+
+        try {
+            const oldPath = node.path;
+            const separator = oldPath.includes("\\") ? "\\" : "/";
+            const parentPath = oldPath.substring(0, oldPath.lastIndexOf(separator));
+            const newPath = `${parentPath}${separator}${renameValue}`;
+
+            await renameFile(oldPath, newPath);
+
+            if (rootPath) {
+                await refreshFileTree(rootPath);
+            }
+        } catch (error) {
+            console.error("Failed to rename file:", error);
+            alert(`Failed to rename: ${error}`);
+        }
+
+        setIsRenaming(false);
+    };
+
+    const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") {
+            handleRenameSubmit();
+        } else if (e.key === "Escape") {
+            setIsRenaming(false);
         }
     };
 
@@ -230,9 +320,22 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={onClick}
+                onClick={(e) => {
+                    if (e.shiftKey && lastSelectedPath) {
+                        selectRange(node.path);
+                        return;
+                    }
+
+                    if (e.ctrlKey || e.metaKey) {
+                        toggleSelection(node.path);
+                        return;
+                    }
+
+                    setSelectedPaths([node.path]);
+                    onClick();
+                }}
                 onContextMenu={handleContextMenu}
-                className={`file-item relative ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
+                className={`file-item relative ${isSelected ? "selected" : ""} ${isMultiSelected ? "multi-selected" : ""} ${isDragOver ? "drag-over" : ""}`}
                 style={{ paddingLeft: `${depth * 12 + 4}px` }}
             >
                 {/* Expand/Collapse Arrow */}
@@ -250,7 +353,21 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
                 <span className="flex-shrink-0">{getFileIcon()}</span>
 
                 {/* Name */}
-                <span className="truncate">{node.name}</span>
+                {isRenaming ? (
+                    <input
+                        ref={renameInputRef}
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={handleRenameSubmit}
+                        onKeyDown={handleRenameKeyDown}
+                        autoFocus
+                        className="flex-1 px-2 py-0.5 bg-[var(--color-void-700)] text-[var(--color-text-primary)] border border-[var(--color-accent-primary)] rounded text-sm outline-none"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                ) : (
+                    <span className="truncate">{node.name}</span>
+                )}
             </div>
 
             {/* Context Menu */}
@@ -276,6 +393,13 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
                     >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Reveal in Explorer
+                    </button>
+                    <button
+                        onClick={handleRenameClick}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)]"
+                    >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        Rename
                     </button>
                     <div className="border-t border-[var(--color-border-subtle)] my-1" />
                     <button

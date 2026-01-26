@@ -353,6 +353,13 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/* Multi-select styling */
+.file-item.multi-selected {
+  background: rgb(99 102 241 / 0.12);
+  outline: 1px solid rgb(99 102 241 / 0.25);
+  outline-offset: -1px;
+}
+
 /* Folder drop target indicator */
 .file-item.drag-over::after {
   content: 'Drop here';
