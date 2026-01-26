@@ -32,6 +32,8 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         toggleSelection,
         selectRange,
         lastSelectedPath,
+        setDraggedPaths,
+        clearDraggedPaths,
     } = useFileStore();
     const { revealInExplorer, deleteFile, moveItem, renameFile, batchDeleteFiles, batchMoveFiles, refreshFileTree, rootPath } = useFileSystem();
     const isSelected = currentFilePath === node.path;
@@ -52,7 +54,9 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         e.stopPropagation();
         console.log("Drag start:", node.path);
         const sourcePaths = selectedPaths.includes(node.path) ? selectedPaths : [node.path];
-        e.dataTransfer.setData("text/plain", JSON.stringify(sourcePaths));
+        setDraggedPaths(sourcePaths);
+        e.dataTransfer.setData("text/plain", node.path);
+        e.dataTransfer.setData("application/x-voiddesk-paths", JSON.stringify(sourcePaths));
         e.dataTransfer.effectAllowed = "move";
 
         // Add a custom drag image effect by setting opacity via CSS class
@@ -69,29 +73,27 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         e.stopPropagation();
         const target = e.currentTarget as HTMLElement;
         target.classList.remove("dragging");
+        // Don't clear here - let the drop handler clear after processing
+        // clearDraggedPaths() is called in handleDrop and handleRootDrop
     };
 
     const handleDragEnter = (e: React.DragEvent) => {
+        console.log("DragEnter on:", node.path, "isDir:", node.isDir);
         if (node.isDir) {
             e.preventDefault();
             e.stopPropagation();
 
             // Get the source path to check if we're dragging into ourselves
-            const raw = e.dataTransfer.types.includes("text/plain")
-                ? e.dataTransfer.getData("text/plain")
-                : null;
-            let sourcePath: string | null = null;
-            if (raw) {
-                try {
-                    const parsed = JSON.parse(raw);
-                    sourcePath = Array.isArray(parsed) ? parsed[0] : raw;
-                } catch {
-                    sourcePath = raw;
-                }
-            }
+            const sourcePath = useFileStore.getState().draggedPaths[0];
+            console.log("DragEnter - sourcePath from store:", sourcePath);
 
             // Only show drop indicator if this is a valid target
-            if (!sourcePath || (sourcePath !== node.path && !node.path.startsWith(sourcePath + "\\"))) {
+            if (!sourcePath) {
+                setIsDragOver(true);
+                return;
+            }
+
+            if (sourcePath !== node.path && !node.path.startsWith(sourcePath + "\\")) {
                 setIsDragOver(true);
             }
         }
@@ -103,6 +105,11 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
             e.stopPropagation();
             e.dataTransfer.dropEffect = "move";
         }
+    };
+
+    const handleDropDebug = async (e: React.DragEvent) => {
+        console.log("Drop event fired on:", node.path, "isDir:", node.isDir);
+        await handleDrop(e);
     };
 
     const handleDragLeave = (e: React.DragEvent) => {
@@ -126,15 +133,26 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
 
         if (!node.isDir) return;
 
-        const raw = e.dataTransfer.getData("text/plain");
-        if (!raw) return;
+        // Try store first, fallback to dataTransfer
+        let sourcePaths = useFileStore.getState().draggedPaths;
+        if (sourcePaths.length === 0) {
+            const jsonData = e.dataTransfer.getData("application/x-voiddesk-paths");
+            if (jsonData) {
+                try {
+                    sourcePaths = JSON.parse(jsonData);
+                } catch {
+                    const plainPath = e.dataTransfer.getData("text/plain");
+                    if (plainPath) sourcePaths = [plainPath];
+                }
+            } else {
+                const plainPath = e.dataTransfer.getData("text/plain");
+                if (plainPath) sourcePaths = [plainPath];
+            }
+        }
 
-        let sourcePaths: string[] = [];
-        try {
-            const parsed = JSON.parse(raw);
-            sourcePaths = Array.isArray(parsed) ? parsed : [raw];
-        } catch {
-            sourcePaths = [raw];
+        if (sourcePaths.length === 0) {
+            console.log("No source paths found for drop");
+            return;
         }
 
         console.log("Move detected. Target Dir:", node.path, "Sources:", sourcePaths);
@@ -160,7 +178,10 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
             }
         }
 
-        if (operations.length === 0) return;
+        if (operations.length === 0) {
+            clearDraggedPaths();
+            return;
+        }
 
         console.log("Moving items...", operations);
         if (operations.length === 1) {
@@ -168,6 +189,8 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         } else {
             await batchMoveFiles(operations);
         }
+
+        clearDraggedPaths();
     };
 
     // Close context menu when clicking outside
@@ -319,7 +342,7 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
                 onDragEnter={handleDragEnter}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
+                onDrop={handleDropDebug}
                 onClick={(e) => {
                     if (e.shiftKey && lastSelectedPath) {
                         selectRange(node.path);

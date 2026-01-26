@@ -40,6 +40,7 @@ interface FileState {
     // Multi-select state
     selectedPaths: string[];
     lastSelectedPath: string | null;
+    draggedPaths: string[];
 
     // Actions
     setRootPath: (path: string) => void;
@@ -57,6 +58,8 @@ interface FileState {
     toggleSelection: (path: string) => void;
     selectRange: (endPath: string) => void;
     clearSelection: () => void;
+    setDraggedPaths: (paths: string[]) => void;
+    clearDraggedPaths: () => void;
 }
 
 export const useFileStore = create<FileState>((set, get) => ({
@@ -66,6 +69,7 @@ export const useFileStore = create<FileState>((set, get) => ({
     currentFilePath: null,
     selectedPaths: [],
     lastSelectedPath: null,
+    draggedPaths: [],
 
     setRootPath: (path) => set({ rootPath: path }),
 
@@ -177,4 +181,6 @@ export const useFileStore = create<FileState>((set, get) => ({
     },
 
     clearSelection: () => set({ selectedPaths: [], lastSelectedPath: null }),
+    setDraggedPaths: (paths) => set({ draggedPaths: paths }),
+    clearDraggedPaths: () => set({ draggedPaths: [] }),
 }));

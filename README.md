@@ -1,99 +1,91 @@
 # VoiDesk 🌑
 
-> A high-performance, AI-native IDE built for the future.
+[![Tauri](https://img.shields.io/badge/Runtime-Tauri%202.0-blue?logo=tauri)](https://tauri.app/)
+[![React](https://img.shields.io/badge/Frontend-React%2018-61DAFB?logo=react)](https://reactjs.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-VoiDesk is a lightweight, blazingly fast code editor built with **Tauri 2.0** and **React**. It features a futuristic, dark-mode-first aesthetic and deeply integrated AI capabilities designed to enhance developer productivity without getting in the way.
+VoiDesk is a **high-performance, AI-native IDE** designed for speed, precision, and a futuristic developer experience. Built on **Tauri 2.0 and Rust**, it offers the power of a native application with the flexibility of a modern web stack.
 
 ![VoiDesk Screenshot](screenshot.png)
 
-## ✨ key Features
+## 🚀 Why VoiDesk?
 
-- **🚀 Native Performance**: Built on Rust (Tauri), ensuring extremely low memory usage and instant startup times compared to Electron-based editors.
-- **🤖 Deep AI Integration**:
-  - **Context-Aware Assistance**: Chat with an AI that knows your codebase. Use `@` to reference specific files.
-  - **Streaming Responses**: Real-time AI generation with a rich, markdown-enabled chat interface.
-  - **Agentic Capabilities**: The AI can read, write, create, and delete files directly (with your permission).
-- **🖥️ High-Fidelity Terminal**:
-  - Integrated `xterm.js` terminal with GPU acceleration.
-  - Full PTY support via `portable-pty` for a native shell experience.
-- **⚡ Modern Editor**:
-  - Powered by **CodeMirror 6**.
-  - Syntax highlighting for Rust, TypeScript, Python, and more.
-  - Robust file tree with virtualization for handling large projects.
-- **🎨 Void Theme**: A custom-designed deep space aesthetic with subtle animations and focus-driven contrast.
+VoiDesk is built for developers who find Electron-based editors too heavy. By leveraging Rust and the system's native WebView, VoiDesk achieves **instant startup times** and **minimal RAM usage** without sacrificing the rich UI of a modern IDE.
+
+---
+
+## ✨ Key Features
+
+### 🛠️ Advanced Explorer & File Ops
+- **Multi-Select & Batch Operations**: Select multiple files/folders using `Shift+Click` (range) or `Ctrl/Cmd+Toggle`. Move or Delete entire selections in one go.
+- **Improved Drag & Drop**: Seamlessly move items between directories or back to the workspace root with visual target indicators.
+- **Native Context Menu**: Fast, native-feeling menus for quick actions like Copy Path, Reveal in Explorer, and Rename.
+- **Live Watcher**: Your project tree stays in sync with the disk automatically using high-performance system events.
+
+### 🤖 Deep AI Integration (Native Agent)
+- **Agentic Capabilities**: The AI isn't just a chat box. It can **read, write, create, and delete files** to help you build features or fix bugs proactively.
+- **Ghost Text (Inline Completions)**: Context-aware suggestions appear as you type. Accept with `Tab` or accept word-by-word with `Ctrl/Cmd + Right Arrow`.
+- **Tool-Call HUD**: Visual feedback in the chat whenever the AI interacts with your system (reading files, listing directories, etc.).
+- **Session Resilience**: Stable, persistent conversation history that re-initializes automatically across app restarts.
+- **Context Awareness**: Use `@` to reference specific files or folders in your chat context.
+
+### ⚡ Professional Editor Performance
+- **CodeMirror 6 Engine**: A modernized editor core with support for complex extensions and high-performance syntax highlighting.
+- **LSP Support**: Robust code intelligence including **Autocomplete** and **Rich Markdown Hover Tooltips**.
+- **GPU-Accelerated Terminal**: Integrated `xterm.js` terminal with full PTY support via `portable-pty` for a seamless shell experience.
+
+### 🎨 The Void Aesthetic
+- Deep-space dark mode with subtle micro-animations.
+- Focus-driven contrast and premium typography (JetBrains Mono).
+- Responsive, glassmorphic UI components built with Tailwind CSS 4.
+
+---
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: React 18, TypeScript, Tailwind CSS 4, Radix UI
-- **Backend / Runtime**: Tauri 2.0 (Rust)
-- **Editor Engine**: CodeMirror 6
-- **Terminal Engine**: xterm.js + portable-pty
-- **State Management**: Zustand
-- **AI Orchestration**: adk-rust (Agent Development Kit)
+- **Backend**: Rust, Tauri 2.0, adk-rust (Agent Development Kit)
+- **Frontend**: React 18, TypeScript, Tailwind CSS 4, Radix UI, Zustand
+- **Editor**: CodeMirror 6
+- **Terminal**: xterm.js, portable-pty
+
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-
-- **Node.js**: v18 or newer
-- **Rust**: Latest stable version (via rustup)
-- **Visual Studio Build Tools** (Windows only) for C++ build dependencies.
+- **Node.js**: v18+
+- **Rust**: Latest stable (via rustup)
+- **C++ Build Tools**: Required for native dependencies (Windows)
 
 ### Installation
+1. **Clone & Enter**
+   ```bash
+   git clone https://github.com/AlvinPlayz23/void-desk.git
+   cd void-desk
+   ```
+2. **Install Deps**
+   ```bash
+   npm install
+   ```
+3. **Launch Dev**
+   ```bash
+   npm run tauri dev
+   ```
 
-1.  **Clone the repository**
-    ```bash
-    git clone https://github.com/AlvinPlayz23/void-desk.git
-    cd void-desk
-    ```
+---
 
-2.  **Install dependencies**
-    ```bash
-    npm install
-    ```
+## 🗺️ Roadmap & Documentation
 
-3.  **Run Development Server**
-    Start both the frontend and the Rust backend in dev mode:
-    ```bash
-    npm run tauri dev
-    ```
+- [x] High-Fidelity Terminal Integration
+- [x] Multi-Select & Batch File Operations
+- [x] Inline AI Completions (Ghost Text)
+- [x] Persistent AI Sessions
+- [ ] LSP Diagnostics & Error Squiggles (Phase II)
+- [ ] Global Find & Replace (Project-wide)
+- [ ] Git Integration Panel
 
-4.  **Build for Production**
-    Create an optimized native executable:
-    ```bash
-    npm run tauri build
-    ```
+For internal architecture and integration details, see **[AGENTS.md](./AGENTS.md)**.
 
-## 🆕 Recent Updates
+---
 
-- **Multi-Language Syntax Highlighting**: Full support for JavaScript, TypeScript, Python, Rust, HTML, CSS, JSON, and Markdown
-- **File Watching**: The file tree now auto-refreshes when files are modified, created, or deleted outside the IDE
-- **Find & Replace**: Press `Ctrl+F` to find in file, `Ctrl+H` for find & replace (supports regex and case-sensitive search)
-- **Improved Drag & Drop**: Move files between folders or back to the workspace root with visual feedback
-
-## 🗺️ Roadmap
-
-- [x] Core Editor & File System
-- [x] AI Chat & Context System
-- [x] Integrated Terminal
-- [x] File Watching & Auto-Refresh
-- [x] Find & Replace
-- [x] Multi-Language Syntax Highlighting
-- [ ] LSP Integration (Language Server Protocol) - [See Plan](./LSP-PLAN.md)
-- [ ] Git Integration
-- [ ] Plugin System
-
-## 📚 Project Documentation
-
-VoiDesk maintains comprehensive documentation of its development process:
-
-- **[Feature Logs](./feature-logs/)**: Detailed records of implementation sessions, architectural decisions, and technical details.
-- **[AGENTS.md](./AGENTS.md)**: AI agent architecture and capabilities.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-MIT © VoiDesk Team
+MIT © [AlvinPlayz23](https://github.com/AlvinPlayz23)

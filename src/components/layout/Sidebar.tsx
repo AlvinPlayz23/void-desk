@@ -12,8 +12,15 @@ import {
 } from "lucide-react";
 
 export function Sidebar() {
-    const { fileTree, rootPath } = useFileStore();
-    const { openFolder, refreshFileTree, createNewFile, createNewFolder, moveItem } = useFileSystem();
+    const { fileTree, rootPath, draggedPaths, clearDraggedPaths } = useFileStore();
+    const {
+        openFolder,
+        refreshFileTree,
+        createNewFile,
+        createNewFolder,
+        moveItem,
+        batchMoveFiles,
+    } = useFileSystem();
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [isRootDragOver, setIsRootDragOver] = useState(false);
@@ -85,29 +92,66 @@ export function Sidebar() {
 
         if (!rootPath) return;
 
-        const sourcePath = e.dataTransfer.getData("text/plain");
-        if (!sourcePath) return;
-
-        // Extract file name from source path
-        const parts = sourcePath.split(/[/\\]/);
-        const fileName = parts.pop() || "";
-
-        // Determine separator based on rootPath
-        const separator = rootPath.includes('\\') ? '\\' : '/';
-        const targetPath = `${rootPath}${separator}${fileName}`;
-
-        // Don't move if already at root or same path
-        if (sourcePath === targetPath) return;
-
-        // Don't move if source is a direct child of root (already at root level)
-        const sourceDir = sourcePath.substring(0, sourcePath.lastIndexOf(separator));
-        if (sourceDir === rootPath) return;
-
-        console.log("Moving to root:", sourcePath, "->", targetPath);
-        const success = await moveItem(sourcePath, targetPath);
-        if (!success) {
-            console.error("Failed to move to root:", sourcePath);
+        // Try store first, fallback to dataTransfer
+        let sourcePaths = draggedPaths;
+        if (sourcePaths.length === 0) {
+            const jsonData = e.dataTransfer.getData("application/x-voiddesk-paths");
+            if (jsonData) {
+                try {
+                    sourcePaths = JSON.parse(jsonData);
+                } catch {
+                    const plainPath = e.dataTransfer.getData("text/plain");
+                    if (plainPath) sourcePaths = [plainPath];
+                }
+            } else {
+                const plainPath = e.dataTransfer.getData("text/plain");
+                if (plainPath) sourcePaths = [plainPath];
+            }
         }
+
+        if (sourcePaths.length === 0) {
+            console.log("No source paths found for root drop");
+            return;
+        }
+
+        console.log("Root drop detected. Sources:", sourcePaths);
+
+        const separator = rootPath.includes("\\") ? "\\" : "/";
+        const operations: { from: string; to: string }[] = [];
+
+        for (const sourcePath of sourcePaths) {
+            const parts = sourcePath.split(/[/\\]/);
+            const fileName: string = parts.pop() || "";
+            const targetPath: string = `${rootPath}${separator}${fileName}`;
+
+            if (sourcePath === targetPath) continue;
+
+            const lastSeparator = Math.max(sourcePath.lastIndexOf("\\"), sourcePath.lastIndexOf("/"));
+            const sourceDir: string = lastSeparator >= 0 ? sourcePath.substring(0, lastSeparator) : "";
+            if (sourceDir === rootPath) continue;
+
+            operations.push({ from: sourcePath, to: targetPath });
+        }
+
+        if (operations.length === 0) {
+            clearDraggedPaths();
+            return;
+        }
+
+        if (operations.length === 1) {
+            const success = await moveItem(operations[0].from, operations[0].to);
+            if (!success) {
+                console.error("Failed to move to root:", operations[0].from);
+            }
+            clearDraggedPaths();
+            return;
+        }
+
+        const results = await batchMoveFiles(operations);
+        if (results.some((result) => !result.success)) {
+            console.error("Failed to move some items to root", results);
+        }
+        clearDraggedPaths();
     };
 
     return (
