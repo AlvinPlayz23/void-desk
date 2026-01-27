@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
+const MAX_TOOL_FILE_CHARS: usize = 20000;
+
 /// Arguments for the read_file tool
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReadFileArgs {
@@ -93,11 +95,27 @@ pub fn create_read_file_tool(root_path: Option<String>) -> FunctionTool {
                 let path = resolve_and_validate_path(&root, &args.path)?;
                 
                 match fs::read_to_string(&path) {
-                    Ok(content) => Ok(json!({
-                        "success": true,
-                        "path": args.path,
-                        "content": content
-                    })),
+                    Ok(content) => {
+                        let (content, truncated) = if content.len() > MAX_TOOL_FILE_CHARS {
+                            (
+                                format!(
+                                    "{}\n\n[...truncated {} chars...]",
+                                    &content[..MAX_TOOL_FILE_CHARS],
+                                    content.len() - MAX_TOOL_FILE_CHARS
+                                ),
+                                true,
+                            )
+                        } else {
+                            (content, false)
+                        };
+
+                        Ok(json!({
+                            "success": true,
+                            "path": args.path,
+                            "content": content,
+                            "truncated": truncated
+                        }))
+                    }
                     Err(e) => Err(AdkError::Tool(format!("Failed to read file '{}': {}", args.path, e)))
                 }
             }

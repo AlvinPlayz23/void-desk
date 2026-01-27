@@ -1,51 +1,68 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon, Plus, ChevronDown } from "lucide-react";
+import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon, Plus, ChevronDown, Bug } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { invoke } from "@tauri-apps/api/core";
 import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
-import { ToolOperation, useChatStore } from "@/stores/chatStore";
+import { ChatSession, ToolOperation, useChatStore } from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
 
 export function AIChat() {
-    const { messages, isStreaming, sendMessage, stopStreaming } = useAI();
+    const { messages, isStreaming, sendMessage, stopStreaming, retryLastMessage } = useAI();
     const openSettingsPage = useUIStore((state) => state.openSettingsPage);
-    const { createSession, deleteSession, switchSession, activeSessionId } = useChatStore();
+    const createSession = useChatStore((state) => state.createSession);
+    const deleteSession = useChatStore((state) => state.deleteSession);
+    const switchSession = useChatStore((state) => state.switchSession);
+    const activeSessionId = useChatStore((state) => state.activeSessionId);
+    const rootPath = useFileStore((state) => state.rootPath);
 
     const [input, setInput] = useState("");
     const [showFileSearch, setShowFileSearch] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [showSessions, setShowSessions] = useState(false);
-    const [sessions, setSessions] = useState<any[]>([]);
+    const [showDebug, setShowDebug] = useState(false);
+    const [sessions, setSessions] = useState<ChatSession[]>([]);
     const { fileTree } = useFileStore();
+    const storedSessions = useChatStore((state) => state.sessions);
+    const clearDebugLogs = useChatStore((state) => state.clearDebugLogs);
     const scrollRef = useRef<HTMLDivElement>(null);
     const sessionsRef = useRef<HTMLDivElement>(null);
+
+    const currentSession = useMemo(
+        () => storedSessions.find((session) => session.id === activeSessionId) || null,
+        [activeSessionId, storedSessions]
+    );
+    const debugLogs = currentSession?.debugLogs || [];
 
     // Initialize first session
     useEffect(() => {
         if (!activeSessionId) {
-            createSession("New Chat");
+            createSession("New Chat", rootPath ?? null);
         }
-    }, []);
+    }, [activeSessionId, createSession, rootPath]);
 
     // Load sessions
     useEffect(() => {
         loadSessions();
-    }, []);
+    }, [rootPath, storedSessions]);
 
     const loadSessions = async () => {
         try {
-            const list = await invoke<any[]>("list_chat_sessions");
-            setSessions(list);
+            const localSessions = useChatStore.getState().sessions;
+            const workspaceSessions = localSessions.filter((session) => {
+                if (!session.workspacePath) return true;
+                return rootPath ? session.workspacePath === rootPath : false;
+            });
+            const sortedSessions = [...workspaceSessions].sort((a, b) => b.lastUpdated - a.lastUpdated);
+            setSessions(sortedSessions);
         } catch (error) {
             console.error("Failed to load sessions:", error);
         }
     };
 
     const handleNewSession = () => {
-        const id = createSession("New Chat");
+        const id = createSession("New Chat", rootPath ?? null);
         switchSession(id);
         loadSessions();
         setShowSessions(false);
@@ -54,11 +71,6 @@ export function AIChat() {
     const handleDeleteSession = async (id: string) => {
         if (window.confirm("Delete this chat session?")) {
             deleteSession(id);
-            try {
-                await invoke("delete_chat_session", { session_id: id });
-            } catch (error) {
-                console.error("Failed to delete session from backend:", error);
-            }
             await loadSessions();
         }
     };
@@ -109,7 +121,7 @@ export function AIChat() {
     const handleStop = () => stopStreaming();
     const clearChat = () => useChatStore.getState().clearCurrentMessages();
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const val = e.target.value;
         setInput(val);
 
@@ -131,7 +143,7 @@ export function AIChat() {
         setShowFileSearch(false);
     };
 
-    const currentSessionName = useChatStore((state) => state.currentSession()?.name || "Chat");
+    const currentSessionName = currentSession?.name || "Chat";
 
     return (
         <div className="flex flex-col h-full bg-[var(--color-surface-base)]">
@@ -161,27 +173,43 @@ export function AIChat() {
                                     <Plus className="w-3.5 h-3.5" />
                                     New Chat
                                 </button>
-                                {sessions.map(session => (
-                                    <button
+                                {sessions.map((session) => (
+                                    <div
                                         key={session.id}
-                                        onClick={() => { switchSession(session.id); setShowSessions(false); }}
                                         className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] group ${activeSessionId === session.id ? "bg-[var(--color-void-700)] text-[var(--color-accent-primary)]" : ""}`}
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => { switchSession(session.id); setShowSessions(false); }}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter" || event.key === " ") {
+                                                switchSession(session.id);
+                                                setShowSessions(false);
+                                            }
+                                        }}
                                     >
                                         <div className="flex-1 truncate">
                                             <div className="truncate font-medium">{session.name}</div>
-                                            <div className="text-[9px] opacity-30">{new Date(session.created_at * 1000).toLocaleDateString()}</div>
+                                            <div className="text-[9px] opacity-30">{new Date(session.createdAt).toLocaleDateString()}</div>
                                         </div>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id); }}
                                             className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+                                            type="button"
                                         >
                                             <Trash2 className="w-3 h-3" />
                                         </button>
-                                    </button>
+                                    </div>
                                 ))}
                             </div>
                         )}
                     </div>
+                    <button
+                        onClick={() => setShowDebug(!showDebug)}
+                        className={`icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded ${showDebug ? "text-[var(--color-accent-primary)]" : ""}`}
+                        title="AI Debug"
+                    >
+                        <Bug className="w-3.5 h-3.5 opacity-70" />
+                    </button>
                     {messages.length > 0 && (
                         <button onClick={() => window.confirm("Clear history?") && clearChat()} className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded">
                             <Trash2 className="w-3.5 h-3.5 opacity-50" />
@@ -195,6 +223,34 @@ export function AIChat() {
 
             {/* Messages */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6">
+                {showDebug && (
+                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] p-3 text-[10px]">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="uppercase tracking-widest text-[var(--color-text-tertiary)]">AI Debug</span>
+                            <button
+                                onClick={clearDebugLogs}
+                                className="text-[10px] uppercase tracking-widest text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                        {debugLogs.length === 0 ? (
+                            <div className="opacity-50">No debug events yet.</div>
+                        ) : (
+                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                                {debugLogs.map((log, index) => (
+                                    <div key={`${log.timestamp}-${index}`} className="flex items-start gap-2">
+                                        <span className="opacity-50">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                                        <span className={`uppercase tracking-widest ${log.type === "error" ? "text-red-400" : log.type === "retry" ? "text-amber-300" : "text-[var(--color-text-secondary)]"}`}>
+                                            {log.type}
+                                        </span>
+                                        <span className="text-[var(--color-text-primary)]">{log.message}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
                 {messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center opacity-20">
                         <Sparkles className="w-12 h-12 mb-4" />
@@ -219,10 +275,23 @@ export function AIChat() {
                         Processing...
                     </div>
                 )}
+                {!isStreaming && messages.length > 0 && (
+                    messages[messages.length - 1].content.includes("Error: Stream error: Model error: Stream error: stream failed: Invalid status code: 429") ||
+                    messages[messages.length - 1].content.includes("Error: Stream error: Model error: Stream error: stream failed: Invalid status code: 422")
+                ) && (
+                    <div className="flex items-center gap-2 px-2">
+                        <button
+                            onClick={retryLastMessage}
+                            className="text-[10px] uppercase tracking-widest text-[var(--color-accent-primary)] hover:text-[var(--color-text-primary)]"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Input & Search Area */}
-            <div className="relative border-t border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)]">
+            <div className="relative border-t border-[var(--color-border-subtle)] bg-[#18181b]">
                 {showFileSearch && (
                     <div className="absolute bottom-full left-0 w-full max-h-64 overflow-y-auto bg-[var(--color-surface-overlay)] border-t border-[var(--color-border-subtle)] shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50">
                         {filteredFiles.length > 0 ? filteredFiles.map(file => (
@@ -245,28 +314,32 @@ export function AIChat() {
 
                 <ContextPills />
 
-                <div className="p-4 flex gap-3">
-                    <div className="flex-1 relative">
-                        <input
-                            type="text"
-                            value={input}
-                            onChange={handleInputChange}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey) handleSend();
-                                if (e.key === "Escape") setShowFileSearch(false);
-                            }}
-                            placeholder="Type @ to search files..."
-                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-primary)] focus:bg-[var(--color-void-700)] outline-none transition-all placeholder:text-[var(--color-text-muted)]"
-                        />
-                    </div>
+                <div className="px-4 pt-4 pb-2">
+                    <textarea
+                        value={input}
+                        onChange={handleInputChange}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSend();
+                            }
+                            if (e.key === "Escape") setShowFileSearch(false);
+                        }}
+                        placeholder="Ask anything... Use '@' to show code, files, and docs to the AI"
+                        rows={2}
+                        className="w-full bg-transparent text-lg text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none h-[3.5rem] font-normal leading-relaxed tracking-normal"
+                    />
+                </div>
+                <div className="flex items-center justify-end px-3 pb-3 pt-1 select-none">
                     <button
                         onClick={isStreaming ? handleStop : handleSend}
-                        className={`p-2.5 rounded-lg transition-all shadow-lg ${isStreaming
+                        className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all ${isStreaming
                             ? "bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white"
                             : "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] hover:shadow-[0_0_20px_rgba(99,102,241,0.4)]"
                             }`}
+                        title={isStreaming ? "Stop" : "Send"}
                     >
-                        {isStreaming ? <StopCircle className="w-5 h-5" /> : <Send className="w-5 h-5" />}
+                        {isStreaming ? <StopCircle className="w-4.5 h-4.5" /> : <Send className="w-4.5 h-4.5" />}
                     </button>
                 </div>
             </div>

@@ -15,11 +15,19 @@ export interface Message {
     timestamp: number;
 }
 
+export interface DebugLog {
+    timestamp: number;
+    type: "info" | "error" | "tool" | "retry";
+    message: string;
+}
+
 export interface ChatSession {
     id: string;
     name: string;
     messages: Message[];
     contextPaths: string[];
+    workspacePath: string | null;
+    debugLogs: DebugLog[];
     createdAt: number;
     lastUpdated: number;
 }
@@ -32,9 +40,10 @@ interface ChatState {
     currentSession: () => ChatSession | null;
     currentMessages: () => Message[];
     currentContextPaths: () => string[];
+    currentDebugLogs: () => DebugLog[];
 
     // Session management
-    createSession: (name: string) => string;
+    createSession: (name: string, workspacePath?: string | null) => string;
     deleteSession: (id: string) => void;
     switchSession: (id: string) => void;
     renameSession: (id: string, name: string) => void;
@@ -46,6 +55,8 @@ interface ChatState {
     addToolOperation: (operation: ToolOperation) => void;
     removeLastMessage: () => void;
     clearCurrentMessages: () => void;
+    addDebugLog: (log: DebugLog) => void;
+    clearDebugLogs: () => void;
 
     // Context management
     addContextPath: (path: string) => void;
@@ -75,13 +86,20 @@ export const useChatStore = create<ChatState>()(
                 return current?.contextPaths || [];
             },
 
-            createSession: (name: string) => {
+            currentDebugLogs: () => {
+                const current = get().currentSession();
+                return current?.debugLogs || [];
+            },
+
+            createSession: (name: string, workspacePath?: string | null) => {
                 const id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 const newSession: ChatSession = {
                     id,
                     name,
                     messages: [],
                     contextPaths: [],
+                    workspacePath: workspacePath ?? null,
+                    debugLogs: [],
                     createdAt: Date.now(),
                     lastUpdated: Date.now(),
                 };
@@ -230,6 +248,34 @@ export const useChatStore = create<ChatState>()(
                     return {
                         sessions: state.sessions.map((s) =>
                             s.id === current.id ? { ...s, messages: [] } : s
+                        ),
+                    };
+                });
+            },
+
+            addDebugLog: (log) => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
+
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id
+                                ? { ...s, debugLogs: [...s.debugLogs, log], lastUpdated: Date.now() }
+                                : s
+                        ),
+                    };
+                });
+            },
+
+            clearDebugLogs: () => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current) return state;
+
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id ? { ...s, debugLogs: [] } : s
                         ),
                     };
                 });

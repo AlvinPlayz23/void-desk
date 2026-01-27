@@ -20,10 +20,14 @@ export function useAI() {
     const { refreshFileTree } = useFileSystem();
     const messages = useChatStore((state) => state.currentMessages());
     const activeSessionId = useChatStore((state) => state.activeSessionId);
-    const { addMessage, appendToLastMessage, addToolOperation, updateLastMessage } = useChatStore();
+    const { addMessage, appendToLastMessage, addToolOperation, updateLastMessage, addDebugLog } = useChatStore();
 
     // Store abort flag
     const abortRef = useRef(false);
+    const retryAttemptsRef = useRef(0);
+    const currentMessageRef = useRef("");
+    const pendingRetryRef = useRef(false);
+    const activeRequestRef = useRef(0);
 
     const stopStreaming = useCallback(() => {
         abortRef.current = true;
@@ -31,16 +35,36 @@ export function useAI() {
     }, []);
 
     const sendMessage = useCallback(
-        async (text: string) => {
+        async (text: string, isRetry = false) => {
             if (!text.trim() || isStreaming) return;
 
             // Reset abort flag
             abortRef.current = false;
+            if (!isRetry) {
+                retryAttemptsRef.current = 0;
+            }
+            currentMessageRef.current = text;
+            pendingRetryRef.current = false;
+            const requestId = activeRequestRef.current + 1;
+            activeRequestRef.current = requestId;
 
-            const userMessage: Message = { role: "user", content: text, timestamp: Date.now() };
-            addMessage(userMessage);
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "info",
+                message: isRetry ? "Retrying message" : "Sending message",
+            });
 
-            const assistantMessage: Message = { role: "assistant", content: "", toolOperations: [], timestamp: Date.now() };
+            if (!isRetry) {
+                const userMessage: Message = { role: "user", content: text, timestamp: Date.now() };
+                addMessage(userMessage);
+            }
+
+            const assistantMessage: Message = {
+                role: "assistant",
+                content: "",
+                toolOperations: [],
+                timestamp: Date.now(),
+            };
             addMessage(assistantMessage);
 
             setIsStreaming(true);
@@ -81,9 +105,54 @@ export function useAI() {
                     }
 
                     if (chunk.error) {
+                        const current = useChatStore.getState().currentMessages();
+                        const lastMessage = current[current.length - 1];
+                        const existingContent = lastMessage?.content || "";
                         updateLastMessage({
-                            content: useChatStore.getState().currentMessages().slice(-1)[0].content + "\n\nError: " + chunk.error
+                            content: existingContent + "\n\nError: " + chunk.error,
                         });
+
+                        addDebugLog({
+                            timestamp: Date.now(),
+                            type: "error",
+                            message: chunk.error,
+                        });
+
+                        const isRateLimitError = chunk.error.includes("Invalid status code: 429");
+                        const isUnprocessableEntity = chunk.error.includes("Invalid status code: 422");
+                        if (
+                            isRateLimitError &&
+                            retryAttemptsRef.current < 1 &&
+                            !pendingRetryRef.current &&
+                            !abortRef.current
+                        ) {
+                            retryAttemptsRef.current += 1;
+                            pendingRetryRef.current = true;
+                            addDebugLog({
+                                timestamp: Date.now(),
+                                type: "retry",
+                                message: "Auto-retrying after 429 rate limit",
+                            });
+                            setIsStreaming(false);
+                            setTimeout(() => {
+                                if (abortRef.current || activeRequestRef.current !== requestId) return;
+                                useChatStore.getState().removeLastMessage();
+                                sendMessage(currentMessageRef.current, true);
+                            }, 1200);
+                        } else if (isUnprocessableEntity) {
+                            addDebugLog({
+                                timestamp: Date.now(),
+                                type: "error",
+                                message: "Request rejected with 422. Try again or reduce context size.",
+                            });
+                            setIsStreaming(false);
+                            abortRef.current = false;
+                            pendingRetryRef.current = false;
+                        } else {
+                            setIsStreaming(false);
+                            abortRef.current = false;
+                            pendingRetryRef.current = false;
+                        }
                         return;
                     }
 
@@ -93,6 +162,12 @@ export function useAI() {
 
                     if (chunk.tool_operation) {
                         addToolOperation(chunk.tool_operation);
+
+                        addDebugLog({
+                            timestamp: Date.now(),
+                            type: "tool",
+                            message: `${chunk.tool_operation.operation} ${chunk.tool_operation.target}`,
+                        });
 
                         // Auto-refresh file tree when AI makes changes
                         if (chunk.tool_operation.status === "completed") {
@@ -109,11 +184,24 @@ export function useAI() {
                         // We could log this or show it in dev mode, 
                         // but tool_operation handles visual feedback
                         console.log("Tool call:", chunk.tool_call);
+
+                        addDebugLog({
+                            timestamp: Date.now(),
+                            type: "info",
+                            message: chunk.tool_call,
+                        });
                     }
 
                     if (chunk.done) {
                         setIsStreaming(false);
                         abortRef.current = false;
+                        pendingRetryRef.current = false;
+
+                        addDebugLog({
+                            timestamp: Date.now(),
+                            type: "info",
+                            message: "Stream complete",
+                        });
                     }
                 };
 
@@ -132,16 +220,35 @@ export function useAI() {
                 updateLastMessage({
                     content: "Failed to connect to AI. Please check your settings."
                 });
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "error",
+                    message: `AI Error: ${String(error)}`,
+                });
                 setIsStreaming(false);
                 abortRef.current = false;
             }
         },
-        [isStreaming, activeSessionId, openAIKey, openAIBaseUrl, openAIModelId, rootPath, addMessage, appendToLastMessage, addToolOperation, updateLastMessage]
+        [
+            isStreaming,
+            activeSessionId,
+            openAIKey,
+            openAIBaseUrl,
+            openAIModelId,
+            rootPath,
+            addMessage,
+            appendToLastMessage,
+            addToolOperation,
+            updateLastMessage,
+            addDebugLog,
+        ]
     );
 
     const retryLastMessage = useCallback(async () => {
         const currentMessages = useChatStore.getState().currentMessages();
         if (currentMessages.length === 0) return;
+
+        if (isStreaming) return;
 
         // Find last user message
         const lastUserMsgIdx = [...currentMessages].reverse().findIndex(m => m.role === "user");
@@ -150,16 +257,26 @@ export function useAI() {
         const actualIdx = currentMessages.length - 1 - lastUserMsgIdx;
         const lastUserContent = currentMessages[actualIdx].content;
 
+        retryAttemptsRef.current = 0;
+        pendingRetryRef.current = false;
+        abortRef.current = false;
+
+        addDebugLog({
+            timestamp: Date.now(),
+            type: "retry",
+            message: "Manual retry requested",
+        });
+
         // Remove all messages after the last user message
         useChatStore.getState().clearCurrentMessages();
-        const keptMessages = currentMessages.slice(0, actualIdx);
-        
+        const keptMessages = currentMessages.slice(0, actualIdx + 1);
+
         // Re-add kept messages manually
-        keptMessages.forEach(msg => useChatStore.getState().addMessage(msg));
+        keptMessages.forEach((msg) => useChatStore.getState().addMessage(msg));
 
         // Re-send
-        await sendMessage(lastUserContent);
-    }, [sendMessage]);
+        await sendMessage(lastUserContent, true);
+    }, [addDebugLog, isStreaming, sendMessage]);
 
     return {
         messages,
