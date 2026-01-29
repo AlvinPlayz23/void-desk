@@ -16,7 +16,7 @@ export interface InlineCompletionState {
 export function useInlineCompletion() {
     const [completion, setCompletion] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const { openAIKey, openAIBaseUrl, openAIModelId, inlineCompletionsEnabled } = useSettingsStore();
+    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, inlineCompletionsEnabled } = useSettingsStore();
 
     const debounceRef = useRef<ReturnType<typeof setTimeout>>();
     const abortRef = useRef(false);
@@ -83,6 +83,7 @@ export function useInlineCompletion() {
                         }
                     };
 
+                    const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
                     await invoke("get_inline_completion", {
                         content,
                         cursorPos,
@@ -90,7 +91,7 @@ export function useInlineCompletion() {
                         language,
                         apiKey: openAIKey,
                         baseUrl: openAIBaseUrl,
-                        modelId: openAIModelId,
+                        modelId: activeModelId,
                         onEvent,
                     });
                 } catch (error) {
@@ -101,7 +102,7 @@ export function useInlineCompletion() {
                 }
             }, 500);
         },
-        [openAIKey, openAIBaseUrl, openAIModelId, inlineCompletionsEnabled]
+        [openAIKey, openAIBaseUrl, selectedModelId, aiModels, inlineCompletionsEnabled]
     );
 
     // These functions use the ref for synchronous access

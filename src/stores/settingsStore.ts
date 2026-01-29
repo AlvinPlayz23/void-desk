@@ -10,6 +10,11 @@ export interface KeyBinding {
     alt?: boolean;
 }
 
+export interface AIModelConfig {
+    id: string;
+    name: string;
+}
+
 export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
     { id: "save", name: "Save File", key: "s", ctrl: true },
     { id: "openFolder", name: "Open Folder", key: "o", ctrl: true },
@@ -26,7 +31,8 @@ interface SettingsState {
     // AI Settings
     openAIKey: string;
     openAIBaseUrl: string;
-    openAIModelId: string;
+    aiModels: AIModelConfig[];
+    selectedModelId: string;
     inlineCompletionsEnabled: boolean;
 
     // Appearance Settings
@@ -46,7 +52,11 @@ interface SettingsState {
     // Actions - AI
     setOpenAIKey: (key: string) => void;
     setOpenAIBaseUrl: (url: string) => void;
-    setOpenAIModelId: (id: string) => void;
+    setAIModels: (models: AIModelConfig[]) => void;
+    addAIModel: (model: AIModelConfig) => void;
+    updateAIModel: (id: string, updates: Partial<AIModelConfig>) => void;
+    removeAIModel: (id: string) => void;
+    setSelectedModelId: (id: string) => void;
     setInlineCompletionsEnabled: (enabled: boolean) => void;
 
     // Actions - Appearance
@@ -84,7 +94,8 @@ export const useSettingsStore = create<SettingsState>()(
             // AI Settings
             openAIKey: "",
             openAIBaseUrl: "https://api.openai.com",
-            openAIModelId: "gpt-4o",
+            aiModels: [{ id: "gpt-4o", name: "gpt-4o" }],
+            selectedModelId: "gpt-4o",
             inlineCompletionsEnabled: true,
 
             // Appearance Settings
@@ -104,7 +115,23 @@ export const useSettingsStore = create<SettingsState>()(
             // Actions - AI
             setOpenAIKey: (key) => set({ openAIKey: key }),
             setOpenAIBaseUrl: (url) => set({ openAIBaseUrl: url }),
-            setOpenAIModelId: (id) => set({ openAIModelId: id }),
+            setAIModels: (models) => set({ aiModels: models }),
+            addAIModel: (model) => set((state) => ({ aiModels: [...state.aiModels, model] })),
+            updateAIModel: (id, updates) => set((state) => ({
+                aiModels: state.aiModels.map((model) =>
+                    model.id === id ? { ...model, ...updates } : model
+                ),
+            })),
+            removeAIModel: (id) => set((state) => {
+                const filtered = state.aiModels.filter((model) => model.id !== id);
+                const nextSelected =
+                    state.selectedModelId === id ? filtered[0]?.id || "" : state.selectedModelId;
+                return {
+                    aiModels: filtered,
+                    selectedModelId: nextSelected,
+                };
+            }),
+            setSelectedModelId: (id) => set({ selectedModelId: id }),
             setInlineCompletionsEnabled: (enabled) => set({ inlineCompletionsEnabled: enabled }),
 
             // Actions - Appearance
@@ -144,7 +171,8 @@ export const useSettingsStore = create<SettingsState>()(
             resetSettings: () => set({
                 openAIKey: "",
                 openAIBaseUrl: "https://api.openai.com",
-                openAIModelId: "gpt-4o",
+                aiModels: [{ id: "gpt-4o", name: "gpt-4o" }],
+                selectedModelId: "gpt-4o",
                 inlineCompletionsEnabled: true,
                 editorFontSize: 14,
                 editorFontFamily: "JetBrains Mono",

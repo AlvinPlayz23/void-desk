@@ -24,6 +24,9 @@ futures-util = "0.3"
 futures = "0.3"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 portable-pty = "0.7"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # ADK-Rust dependencies
 adk-rust = { version = "0.2", features = ["openai"] }
@@ -41,3 +44,7 @@ notify = { version = "6", features = ["macos_fsevent"] }
 
 # LSP support
 lsp-types = "0.95"
+
+[patch.crates-io]
+adk-model = { path = "vendor/adk-model-0.2.0" }
+async-openai = { path = "vendor/async-openai-0.27.2" }

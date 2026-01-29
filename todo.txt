@@ -4,6 +4,6 @@ started and complete tool indicator
 improve ui for autocomplete(if possible only) and hover
 give context to tab iniline compilition..
 
-
+give context to session thingy
 
 feature log for the new settings page..

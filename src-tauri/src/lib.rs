@@ -1,6 +1,7 @@
 mod commands;
 mod lsp;
 mod terminal;
+mod tracing_setup;
 
 use commands::ai_commands;
 use commands::file_commands;
@@ -10,6 +11,7 @@ use commands::project_commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    tracing_setup::init_logging();
     tauri::Builder::default()
         .manage(terminal::TerminalState::new())
         .manage(lsp_commands::LspState::new())

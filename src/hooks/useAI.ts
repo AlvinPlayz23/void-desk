@@ -15,7 +15,7 @@ export interface AIResponseChunk {
 
 export function useAI() {
     const [isStreaming, setIsStreaming] = useState(false);
-    const { openAIKey, openAIBaseUrl, openAIModelId } = useSettingsStore();
+    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels } = useSettingsStore();
     const { rootPath } = useFileStore();
     const { refreshFileTree } = useFileSystem();
     const messages = useChatStore((state) => state.currentMessages());
@@ -93,6 +93,7 @@ export function useAI() {
 
             // Combine user message with context
             const fullMessage = text + contextContent;
+            const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
 
             try {
                 const onEvent = new Channel<AIResponseChunk>();
@@ -105,6 +106,7 @@ export function useAI() {
                     }
 
                     if (chunk.error) {
+                        abortRef.current = true;
                         const current = useChatStore.getState().currentMessages();
                         const lastMessage = current[current.length - 1];
                         const existingContent = lastMessage?.content || "";
@@ -146,11 +148,9 @@ export function useAI() {
                                 message: "Request rejected with 422. Try again or reduce context size.",
                             });
                             setIsStreaming(false);
-                            abortRef.current = false;
                             pendingRetryRef.current = false;
                         } else {
                             setIsStreaming(false);
-                            abortRef.current = false;
                             pendingRetryRef.current = false;
                         }
                         return;
@@ -211,7 +211,7 @@ export function useAI() {
                     message: fullMessage,
                     apiKey: openAIKey,
                     baseUrl: openAIBaseUrl,
-                    modelId: openAIModelId,
+                    modelId: activeModelId,
                     activePath: rootPath,
                     onEvent,
                 });
@@ -234,7 +234,8 @@ export function useAI() {
             activeSessionId,
             openAIKey,
             openAIBaseUrl,
-            openAIModelId,
+            selectedModelId,
+            aiModels,
             rootPath,
             addMessage,
             appendToLastMessage,

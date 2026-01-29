@@ -19,6 +19,7 @@ import {
     ZoomIn,
     Save,
     Gem,
+    Plus,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useUIStore, SettingsCategory, Theme } from "@/stores/uiStore";
@@ -57,7 +58,8 @@ interface PendingSettings {
     // AI
     openAIKey?: string;
     openAIBaseUrl?: string;
-    openAIModelId?: string;
+    aiModels?: { id: string; name: string }[];
+    selectedModelId?: string;
     inlineCompletionsEnabled?: boolean;
     // Editor
     tabSize?: number;
@@ -101,7 +103,8 @@ export function SettingsPage() {
         if (pending.uiScale !== undefined) settings.setUIScale(pending.uiScale);
         if (pending.openAIKey !== undefined) settings.setOpenAIKey(pending.openAIKey);
         if (pending.openAIBaseUrl !== undefined) settings.setOpenAIBaseUrl(pending.openAIBaseUrl);
-        if (pending.openAIModelId !== undefined) settings.setOpenAIModelId(pending.openAIModelId);
+        if (pending.aiModels !== undefined) settings.setAIModels(pending.aiModels);
+        if (pending.selectedModelId !== undefined) settings.setSelectedModelId(pending.selectedModelId);
         if (pending.inlineCompletionsEnabled !== undefined) settings.setInlineCompletionsEnabled(pending.inlineCompletionsEnabled);
         if (pending.tabSize !== undefined) settings.setTabSize(pending.tabSize);
         if (pending.wordWrap !== undefined) settings.setWordWrap(pending.wordWrap);
@@ -239,11 +242,13 @@ export function SettingsPage() {
                             <AISettings
                                 currentKey={getValue("openAIKey", settings.openAIKey)}
                                 currentBaseUrl={getValue("openAIBaseUrl", settings.openAIBaseUrl)}
-                                currentModelId={getValue("openAIModelId", settings.openAIModelId)}
+                                currentModels={getValue("aiModels", settings.aiModels)}
+                                currentSelectedModelId={getValue("selectedModelId", settings.selectedModelId)}
                                 currentInlineEnabled={getValue("inlineCompletionsEnabled", settings.inlineCompletionsEnabled)}
                                 onKeyChange={(v) => updatePending("openAIKey", v)}
                                 onBaseUrlChange={(v) => updatePending("openAIBaseUrl", v)}
-                                onModelIdChange={(v) => updatePending("openAIModelId", v)}
+                                onModelsChange={(v) => updatePending("aiModels", v)}
+                                onSelectedModelIdChange={(v) => updatePending("selectedModelId", v)}
                                 onInlineEnabledChange={(v) => updatePending("inlineCompletionsEnabled", v)}
                             />
                         )}
@@ -450,26 +455,33 @@ function AppearanceSettings({
 interface AISettingsProps {
     currentKey: string;
     currentBaseUrl: string;
-    currentModelId: string;
+    currentModels: { id: string; name: string }[];
+    currentSelectedModelId: string;
     currentInlineEnabled: boolean;
     onKeyChange: (key: string) => void;
     onBaseUrlChange: (url: string) => void;
-    onModelIdChange: (id: string) => void;
+    onModelsChange: (models: { id: string; name: string }[]) => void;
+    onSelectedModelIdChange: (id: string) => void;
     onInlineEnabledChange: (enabled: boolean) => void;
 }
 
 function AISettings({
     currentKey,
     currentBaseUrl,
-    currentModelId,
+    currentModels,
+    currentSelectedModelId,
     currentInlineEnabled,
     onKeyChange,
     onBaseUrlChange,
-    onModelIdChange,
+    onModelsChange,
+    onSelectedModelIdChange,
     onInlineEnabledChange,
 }: AISettingsProps) {
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+    const selectedModel = currentModels.find((model) => model.id === currentSelectedModelId) || currentModels[0];
+    const selectedModelId = selectedModel?.id || "";
 
     const handleTest = async () => {
         setIsTesting(true);
@@ -478,7 +490,7 @@ function AISettings({
             const result = await invoke<string>("test_ai_connection", {
                 apiKey: currentKey,
                 baseUrl: currentBaseUrl,
-                modelId: currentModelId,
+                modelId: selectedModelId,
             });
             setTestResult({ success: true, message: result });
         } catch (error) {
@@ -525,17 +537,74 @@ function AISettings({
                     <div className="space-y-2">
                         <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
                             <Sparkles className="w-4 h-4 text-[var(--color-text-muted)]" />
-                            Model ID
+                            Models
                         </label>
-                        <input
-                            type="text"
-                            value={currentModelId}
-                            onChange={(e) => onModelIdChange(e.target.value)}
-                            placeholder="gpt-4o"
-                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                        />
-                        <p className="text-xs text-[var(--color-text-muted)]">The specific model to use (e.g., gpt-4o, gpt-3.5-turbo, claude-3-opus).</p>
+                        <div className="space-y-3">
+                            {currentModels.map((model, index) => (
+                                <div key={`${model.id}-${index}`} className="grid grid-cols-2 gap-3">
+                                    <input
+                                        type="text"
+                                        value={model.name}
+                                        onChange={(e) =>
+                                            onModelsChange(
+                                                currentModels.map((item, idx) =>
+                                                    idx === index ? { ...item, name: e.target.value } : item
+                                                )
+                                            )
+                                        }
+                                        placeholder="Display name"
+                                        className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                    />
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={model.id}
+                                            onChange={(e) =>
+                                                onModelsChange(
+                                                    currentModels.map((item, idx) =>
+                                                        idx === index ? { ...item, id: e.target.value } : item
+                                                    )
+                                                )
+                                            }
+                                            placeholder="Model ID"
+                                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                        />
+                                        {currentModels.length > 1 && (
+                                            <button
+                                                onClick={() => onModelsChange(currentModels.filter((_, idx) => idx !== index))}
+                                                className="p-2 text-[var(--color-text-muted)] hover:text-red-400"
+                                                title="Remove model"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            <button
+                                onClick={() => onModelsChange([...currentModels, { id: "", name: "" }])}
+                                className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add Model
+                            </button>
+                        </div>
+                        <p className="text-xs text-[var(--color-text-muted)]">Add multiple models with a display name and model ID.</p>
                     </div>
+
+                    <SettingRow label="Default Model" description="Select the model used in the chat panel.">
+                        <select
+                            value={currentSelectedModelId}
+                            onChange={(e) => onSelectedModelIdChange(e.target.value)}
+                            className="bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
+                        >
+                            {currentModels.map((model, index) => (
+                                <option key={`${model.id}-${index}`} value={model.id}>
+                                    {model.name || model.id || "Unnamed model"}
+                                </option>
+                            ))}
+                        </select>
+                    </SettingRow>
 
                     <SettingRow label="Inline AI Completions" description="Show AI-powered ghost text suggestions as you type. Press Tab to accept.">
                         <Toggle checked={currentInlineEnabled} onChange={onInlineEnabledChange} />

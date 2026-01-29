@@ -7,6 +7,7 @@ import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
 import { ChatSession, ToolOperation, useChatStore } from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function AIChat() {
     const { messages, isStreaming, sendMessage, stopStreaming, retryLastMessage } = useAI();
@@ -22,12 +23,17 @@ export function AIChat() {
     const [searchQuery, setSearchQuery] = useState("");
     const [showSessions, setShowSessions] = useState(false);
     const [showDebug, setShowDebug] = useState(false);
+    const [showModelMenu, setShowModelMenu] = useState(false);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const { fileTree } = useFileStore();
     const storedSessions = useChatStore((state) => state.sessions);
     const clearDebugLogs = useChatStore((state) => state.clearDebugLogs);
+    const aiModels = useSettingsStore((state) => state.aiModels);
+    const selectedModelId = useSettingsStore((state) => state.selectedModelId);
+    const setSelectedModelId = useSettingsStore((state) => state.setSelectedModelId);
     const scrollRef = useRef<HTMLDivElement>(null);
     const sessionsRef = useRef<HTMLDivElement>(null);
+    const modelMenuRef = useRef<HTMLDivElement>(null);
 
     const currentSession = useMemo(
         () => storedSessions.find((session) => session.id === activeSessionId) || null,
@@ -80,6 +86,9 @@ export function AIChat() {
         const handleClick = (e: MouseEvent) => {
             if (sessionsRef.current && !sessionsRef.current.contains(e.target as Node)) {
                 setShowSessions(false);
+            }
+            if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+                setShowModelMenu(false);
             }
         };
         document.addEventListener("click", handleClick);
@@ -144,6 +153,9 @@ export function AIChat() {
     };
 
     const currentSessionName = currentSession?.name || "Chat";
+    const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+    const activeModelName =
+        aiModels.find((model) => model.id === activeModelId)?.name || activeModelId || "Model";
 
     return (
         <div className="flex flex-col h-full bg-[var(--color-surface-base)]">
@@ -291,7 +303,7 @@ export function AIChat() {
             </div>
 
             {/* Input & Search Area */}
-            <div className="relative border-t border-[var(--color-border-subtle)] bg-[#18181b]">
+            <div className="relative border-t border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)]">
                 {showFileSearch && (
                     <div className="absolute bottom-full left-0 w-full max-h-64 overflow-y-auto bg-[var(--color-surface-overlay)] border-t border-[var(--color-border-subtle)] shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50">
                         {filteredFiles.length > 0 ? filteredFiles.map(file => (
@@ -314,33 +326,67 @@ export function AIChat() {
 
                 <ContextPills />
 
-                <div className="px-4 pt-4 pb-2">
-                    <textarea
-                        value={input}
-                        onChange={handleInputChange}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSend();
-                            }
-                            if (e.key === "Escape") setShowFileSearch(false);
-                        }}
-                        placeholder="Ask anything... Use '@' to show code, files, and docs to the AI"
-                        rows={2}
-                        className="w-full bg-transparent text-lg text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none h-[3.5rem] font-normal leading-relaxed tracking-normal"
-                    />
-                </div>
-                <div className="flex items-center justify-end px-3 pb-3 pt-1 select-none">
-                    <button
-                        onClick={isStreaming ? handleStop : handleSend}
-                        className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all ${isStreaming
-                            ? "bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white"
-                            : "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] hover:shadow-[0_0_20px_rgba(99,102,241,0.4)]"
-                            }`}
-                        title={isStreaming ? "Stop" : "Send"}
-                    >
-                        {isStreaming ? <StopCircle className="w-4.5 h-4.5" /> : <Send className="w-4.5 h-4.5" />}
-                    </button>
+                <div className="mx-4 mb-3 mt-4 rounded-xl border border-[#27272a] bg-[#18181b] shadow-2xl shadow-black/50 overflow-hidden ring-1 ring-white/[0.02]">
+                    <div className="relative px-4 pt-4 pb-2">
+                        <textarea
+                            value={input}
+                            onChange={handleInputChange}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSend();
+                                }
+                                if (e.key === "Escape") setShowFileSearch(false);
+                            }}
+                            placeholder="Ask anything... Use '@' to show code, files, and docs to the AI"
+                            rows={2}
+                            className="w-full bg-transparent text-lg text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none h-[3.5rem] font-normal leading-relaxed tracking-normal"
+                        />
+                    </div>
+                    <div className="flex items-center justify-between px-3 pb-3 pt-1 select-none">
+                        <div className="flex items-center gap-1" ref={modelMenuRef}>
+                            <button
+                                onClick={() => setShowModelMenu(!showModelMenu)}
+                                className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-zinc-800/70 transition-colors group cursor-pointer"
+                                title="Select model"
+                                disabled={aiModels.length === 0}
+                            >
+                                <span className="text-sm text-zinc-300 font-medium group-hover:text-zinc-100">
+                                    {activeModelName}
+                                </span>
+                                <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-colors ${showModelMenu ? "rotate-180" : ""}`} />
+                            </button>
+                            {showModelMenu && aiModels.length > 0 && (
+                                <div className="absolute left-3 bottom-full mb-2 w-52 max-h-56 overflow-y-auto bg-[#18181b] border border-[#27272a] rounded-lg shadow-xl z-50">
+                                    {aiModels.map((model, index) => (
+                                        <button
+                                            key={`${model.id}-${index}`}
+                                            onClick={() => {
+                                                setSelectedModelId(model.id);
+                                                setShowModelMenu(false);
+                                            }}
+                                            className={`w-full text-left px-3 py-2 text-xs hover:bg-zinc-800/70 border-b border-[#27272a] last:border-b-0 ${model.id === activeModelId ? "text-[var(--color-accent-primary)]" : "text-zinc-200"}`}
+                                        >
+                                            <div className="truncate font-medium">
+                                                {model.name || model.id || "Unnamed model"}
+                                            </div>
+                                            <div className="text-[10px] opacity-50 truncate">{model.id}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={isStreaming ? handleStop : handleSend}
+                            className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all ${isStreaming
+                                ? "bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white"
+                                : "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] hover:shadow-[0_0_20px_rgba(99,102,241,0.4)]"
+                                }`}
+                            title={isStreaming ? "Stop" : "Send"}
+                        >
+                            {isStreaming ? <StopCircle className="w-4.5 h-4.5" /> : <Send className="w-4.5 h-4.5" />}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

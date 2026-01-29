@@ -146,6 +146,7 @@ pub async fn ask_ai_stream(
     {
         Ok(a) => a,
         Err(e) => {
+            tracing::error!("Failed to create agent: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -166,6 +167,7 @@ pub async fn ask_ai_stream(
     let session_id = match service.get_or_create_session(user_id, app_name).await {
         Ok(id) => id,
         Err(e) => {
+            tracing::error!("Failed to create session: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -183,6 +185,7 @@ pub async fn ask_ai_stream(
     let runner = match service.create_runner(agent, app_name) {
         Ok(r) => r,
         Err(e) => {
+            tracing::error!("Failed to create runner: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -206,6 +209,7 @@ pub async fn ask_ai_stream(
     {
         Ok(s) => s,
         Err(e) => {
+            tracing::error!("Failed to run agent: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -229,6 +233,7 @@ pub async fn ask_ai_stream(
                         match part {
                             Part::Text { text } => {
                                 if !text.is_empty() {
+                                    tracing::info!("stream text chunk size={}", text.len());
                                     on_event
                                         .send(AIResponseChunk {
                                             content: Some(text),
@@ -241,6 +246,7 @@ pub async fn ask_ai_stream(
                                 }
                             }
                             Part::FunctionCall { name, args, .. } => {
+                                tracing::info!("tool call: {} args={}", name, args);
                                 // Parse tool operation details
                                 let (operation, target) = match name.as_str() {
                                     "read_file" => (
@@ -346,6 +352,7 @@ pub async fn ask_ai_stream(
                 }
             }
             Err(e) => {
+                tracing::error!("Stream error: {}", e);
                 on_event
                     .send(AIResponseChunk {
                         content: None,
@@ -361,6 +368,7 @@ pub async fn ask_ai_stream(
     }
 
     // Stream complete
+    tracing::info!("Stream complete");
     on_event
         .send(AIResponseChunk {
             content: None,
@@ -696,6 +704,7 @@ pub async fn ask_ai_stream_with_session(
     {
         Ok(a) => a,
         Err(e) => {
+            tracing::error!("Failed to create agent: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -716,6 +725,7 @@ pub async fn ask_ai_stream_with_session(
         match service.get_or_create_session(user_id, app_name).await {
             Ok(id) => id,
             Err(e) => {
+                tracing::error!("Failed to create session: {}", e);
                 on_event
                     .send(AIResponseChunk {
                         content: None,
@@ -738,6 +748,7 @@ pub async fn ask_ai_stream_with_session(
     {
         Ok(id) => id,
         Err(e) => {
+            tracing::error!("Session error: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -755,6 +766,7 @@ pub async fn ask_ai_stream_with_session(
     let runner = match service.create_runner(agent, app_name) {
         Ok(r) => r,
         Err(e) => {
+            tracing::error!("Failed to create runner: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -778,6 +790,7 @@ pub async fn ask_ai_stream_with_session(
     {
         Ok(s) => s,
         Err(e) => {
+            tracing::error!("Failed to run agent: {}", e);
             on_event
                 .send(AIResponseChunk {
                     content: None,
@@ -801,6 +814,7 @@ pub async fn ask_ai_stream_with_session(
                         match part {
                             Part::Text { text } => {
                                 if !text.is_empty() {
+                                    tracing::info!("stream text chunk size={}", text.len());
                                     on_event
                                         .send(AIResponseChunk {
                                             content: Some(text),
@@ -813,6 +827,7 @@ pub async fn ask_ai_stream_with_session(
                                 }
                             }
                             Part::FunctionCall { name, args, .. } => {
+                                tracing::info!("tool call: {} args={}", name, args);
                                 // Parse tool operation details
                                 let (operation, target) = match name.as_str() {
                                     "read_file" => (
@@ -862,6 +877,7 @@ pub async fn ask_ai_stream_with_session(
                 }
             }
             Err(e) => {
+                tracing::error!("Stream error: {}", e);
                 on_event
                     .send(AIResponseChunk {
                         content: None,
@@ -877,6 +893,7 @@ pub async fn ask_ai_stream_with_session(
     }
 
     // Stream complete
+    tracing::info!("Stream complete");
     on_event
         .send(AIResponseChunk {
             content: None,
