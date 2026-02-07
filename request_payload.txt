@@ -1,0 +1,109 @@
+{
+  "model": "gemini-3-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are VoiDesk, an intelligent AI coding assistant integrated into a professional IDE.\n\n## YOUR CAPABILITIES\n\nYou have direct access to the user's project through these tools:\n- **read_file(path)**: Read any file in the project to understand code, configs, or data\n- **write_file(path, content)**: Create new files or overwrite existing ones\n- **list_directory(path)**: Explore the project structure\n- **run_command(command)**: Execute shell commands (npm, git, cargo, etc.)\n\n## CORE PRINCIPLES\n\n1. **ALWAYS USE TOOLS PROACTIVELY** - Don't just talk about code, actually read and modify it\n2. **Verify before acting** - Read files before editing to understand context\n3. **Show your work** - Explain what you're doing and why\n4. **Be precise** - Use exact file paths, never make assumptions\n\n## WORKFLOW EXAMPLES\n\n**When asked to \"add a feature\":**\n1. Use `list_directory` to understand project structure\n2. Use `read_file` to examine relevant files\n3. Use `write_file` to make changes\n4. Use `run_command` to test if appropriate\n\n**When asked to \"fix a bug\":**\n1. Use `read_file` to see the problematic code\n2. Analyze and explain the issue\n3. Use `write_file` to apply the fix\n4. Suggest testing with `run_command`\n\n**When asked \"what does X do\":**\n1. Use `read_file` to examine the code\n2. Provide a detailed explanation based on actual content\n\n## IMPORTANT RULES\n\n- Paths should be relative to the project root (e.g., \"src/main.rs\", not \"/absolute/path\")\n- Always read before writing to avoid breaking existing code\n- After file operations, confirm what you did (\"Created src/new_file.rs with...\")\n- If you're unsure about project structure, use `list_directory` first\n- For multi-file changes, tackle one file at a time and explain each step\n\n## RESPONSE STYLE\n\n- Be direct and technical\n- Use markdown code blocks for code snippets\n- Highlight important operations in your explanations\n- If you use a tool, mention it explicitly (\"I'll read the file to check...\")\n\nRemember: You're not just a chatbot - you're a hands-on coding partner with actual file system access. Use it!"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "create a wenbsite for a car comapny in html"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Write content to a file in the project.",
+        "parameters": {
+          "properties": {
+            "content": {
+              "description": "The content to write",
+              "type": "string"
+            },
+            "path": {
+              "description": "The path to the file to write",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "list_directory",
+        "description": "List directory contents in the project.",
+        "parameters": {
+          "properties": {
+            "path": {
+              "description": "The directory path to list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "run_command",
+        "description": "Run a shell command in the project root.",
+        "parameters": {
+          "properties": {
+            "command": {
+              "description": "The shell command to execute",
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read the contents of a file in the project.",
+        "parameters": {
+          "properties": {
+            "path": {
+              "description": "The path to the file to read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        }
+      }
+    }
+  ],
+  "stream": true,
+  "max_tokens": 2048,
+  "temperature": 0.2
+}

@@ -9,13 +9,15 @@ export interface AIResponseChunk {
     content?: string;
     tool_call?: string;
     tool_operation?: ToolOperation;
+    debug?: string;
     error?: string;
+    error_type?: string;
     done: boolean;
 }
 
 export function useAI() {
     const [isStreaming, setIsStreaming] = useState(false);
-    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels } = useSettingsStore();
+    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled } = useSettingsStore();
     const { rootPath } = useFileStore();
     const { refreshFileTree } = useFileSystem();
     const messages = useChatStore((state) => state.currentMessages());
@@ -110,14 +112,15 @@ export function useAI() {
                         const current = useChatStore.getState().currentMessages();
                         const lastMessage = current[current.length - 1];
                         const existingContent = lastMessage?.content || "";
+                        const errorLabel = chunk.error_type ? `Error (${chunk.error_type}): ` : "Error: ";
                         updateLastMessage({
-                            content: existingContent + "\n\nError: " + chunk.error,
+                            content: existingContent + "\n\n" + errorLabel + chunk.error,
                         });
 
                         addDebugLog({
                             timestamp: Date.now(),
                             type: "error",
-                            message: chunk.error,
+                            message: chunk.error_type ? `${chunk.error_type}: ${chunk.error}` : chunk.error,
                         });
 
                         const isRateLimitError = chunk.error.includes("Invalid status code: 429");
@@ -171,7 +174,7 @@ export function useAI() {
 
                         // Auto-refresh file tree when AI makes changes
                         if (chunk.tool_operation.status === "completed") {
-                            const changedOps = ["Writing", "Created", "Executed", "Deleted"];
+                            const changedOps = ["Writing", "Created", "Edited", "Executed", "Deleted"];
                             if (changedOps.includes(chunk.tool_operation.operation)) {
                                 if (rootPath) {
                                     refreshFileTree(rootPath);
@@ -189,6 +192,14 @@ export function useAI() {
                             timestamp: Date.now(),
                             type: "info",
                             message: chunk.tool_call,
+                        });
+                    }
+
+                    if (chunk.debug) {
+                        addDebugLog({
+                            timestamp: Date.now(),
+                            type: "raw",
+                            message: chunk.debug,
                         });
                     }
 
@@ -213,6 +224,7 @@ export function useAI() {
                     baseUrl: openAIBaseUrl,
                     modelId: activeModelId,
                     activePath: rootPath,
+                    debugRawStream: rawStreamLoggingEnabled,
                     onEvent,
                 });
             } catch (error) {
@@ -242,6 +254,7 @@ export function useAI() {
             addToolOperation,
             updateLastMessage,
             addDebugLog,
+            rawStreamLoggingEnabled,
         ]
     );
 

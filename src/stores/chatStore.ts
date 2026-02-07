@@ -5,6 +5,7 @@ export interface ToolOperation {
     operation: string;
     target: string;
     status: "started" | "completed" | "failed";
+    details?: string;
 }
 
 export interface Message {
@@ -17,7 +18,7 @@ export interface Message {
 
 export interface DebugLog {
     timestamp: number;
-    type: "info" | "error" | "tool" | "retry";
+    type: "info" | "error" | "tool" | "retry" | "raw";
     message: string;
 }
 

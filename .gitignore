@@ -28,6 +28,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Zed crates
+zed-crates/
+
 # Environment variables
 .env
 .env.*

@@ -3,6 +3,7 @@ import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, Fi
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { invoke } from "@tauri-apps/api/core";
 import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
 import { ChatSession, ToolOperation, useChatStore } from "@/stores/chatStore";
@@ -236,32 +237,7 @@ export function AIChat() {
             {/* Messages */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6">
                 {showDebug && (
-                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] p-3 text-[10px]">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="uppercase tracking-widest text-[var(--color-text-tertiary)]">AI Debug</span>
-                            <button
-                                onClick={clearDebugLogs}
-                                className="text-[10px] uppercase tracking-widest text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
-                            >
-                                Clear
-                            </button>
-                        </div>
-                        {debugLogs.length === 0 ? (
-                            <div className="opacity-50">No debug events yet.</div>
-                        ) : (
-                            <div className="space-y-1 max-h-40 overflow-y-auto">
-                                {debugLogs.map((log, index) => (
-                                    <div key={`${log.timestamp}-${index}`} className="flex items-start gap-2">
-                                        <span className="opacity-50">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                                        <span className={`uppercase tracking-widest ${log.type === "error" ? "text-red-400" : log.type === "retry" ? "text-amber-300" : "text-[var(--color-text-secondary)]"}`}>
-                                            {log.type}
-                                        </span>
-                                        <span className="text-[var(--color-text-primary)]">{log.message}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                <DebugPanel debugLogs={debugLogs} clearDebugLogs={clearDebugLogs} />
                 )}
                 {messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center opacity-20">
@@ -468,13 +444,145 @@ function ToolOperationDisplay({ operations }: { operations: ToolOperation[] }) {
             {operations.map((op, i) => (
                 <div
                     key={`${op.operation}-${op.target}-${i}`}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/[0.02] border border-white/5 text-[10px]"
+                    className="flex flex-col gap-2 px-2 py-1.5 rounded bg-white/[0.02] border border-white/5 text-[10px]"
                 >
-                    {getStatusIcon(op.status)}
-                    <span className="font-medium text-[var(--color-text-secondary)] truncate">{op.operation}</span>
-                    <span className="text-[var(--color-text-muted)] truncate flex-1">{op.target.split(/[/\\]/).pop()}</span>
+                    <div className="flex items-center gap-2">
+                        {getStatusIcon(op.status)}
+                        <span className="font-medium text-[var(--color-text-secondary)] truncate">{op.operation}</span>
+                        <span className="text-[var(--color-text-muted)] truncate flex-1">{op.target.split(/[/\\]/).pop()}</span>
+                    </div>
+                    {op.details && op.details.trim() !== "" && (
+                        <details className="text-[9px] text-[var(--color-text-muted)]">
+                            <summary className="cursor-pointer uppercase tracking-widest">Diff</summary>
+                            <pre className="mt-2 whitespace-pre-wrap font-mono text-[9px] text-[var(--color-text-secondary)]">
+                                {op.details}
+                            </pre>
+                        </details>
+                    )}
                 </div>
             ))}
+        </div>
+    );
+}
+
+function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: number; type: string; message: string }[]; clearDebugLogs: () => void }) {
+    const [testOutput, setTestOutput] = useState<string>("");
+    const [testLoading, setTestLoading] = useState(false);
+    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled, setRawStreamLoggingEnabled } = useSettingsStore();
+    const modelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+
+    const runToolCallTest = async () => {
+        setTestLoading(true);
+        setTestOutput("Running tool call test...\n");
+        try {
+            const result = await invoke<string>("debug_tool_call", {
+                apiKey: openAIKey,
+                baseUrl: openAIBaseUrl,
+                modelId,
+            });
+            setTestOutput(result);
+        } catch (err) {
+            setTestOutput(`Error: ${err}`);
+        }
+        setTestLoading(false);
+    };
+
+    const runStreamTest = async () => {
+        setTestLoading(true);
+        setTestOutput("Running stream test...\n");
+        try {
+            const result = await invoke<string>("debug_stream_response", {
+                apiKey: openAIKey,
+                baseUrl: openAIBaseUrl,
+                modelId,
+            });
+            setTestOutput(result);
+        } catch (err) {
+            setTestOutput(`Error: ${err}`);
+        }
+        setTestLoading(false);
+    };
+
+    const runAgentFlowTest = async () => {
+        setTestLoading(true);
+        setTestOutput("Running full agent flow test with tools...\n");
+        try {
+            const rootPath = useFileStore.getState().rootPath;
+            const result = await invoke<string>("debug_agent_flow", {
+                apiKey: openAIKey,
+                baseUrl: openAIBaseUrl,
+                modelId,
+                projectPath: rootPath,
+            });
+            setTestOutput(result);
+        } catch (err) {
+            setTestOutput(`Error: ${err}`);
+        }
+        setTestLoading(false);
+    };
+
+    return (
+        <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] p-3 text-[10px]">
+            <div className="flex items-center justify-between mb-2">
+                <span className="uppercase tracking-widest text-[var(--color-text-tertiary)]">AI Debug</span>
+                <div className="flex gap-2 flex-wrap">
+                    <button
+                        onClick={() => setRawStreamLoggingEnabled(!rawStreamLoggingEnabled)}
+                        className={`px-2 py-1 rounded text-white ${rawStreamLoggingEnabled ? "bg-amber-600 hover:bg-amber-700" : "bg-zinc-700 hover:bg-zinc-600"}`}
+                    >
+                        Raw Stream {rawStreamLoggingEnabled ? "On" : "Off"}
+                    </button>
+                    <button
+                        onClick={runToolCallTest}
+                        disabled={testLoading}
+                        className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                    >
+                        API Test
+                    </button>
+                    <button
+                        onClick={runStreamTest}
+                        disabled={testLoading}
+                        className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+                    >
+                        Stream Test
+                    </button>
+                    <button
+                        onClick={runAgentFlowTest}
+                        disabled={testLoading}
+                        className="px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+                    >
+                        Agent Flow
+                    </button>
+                    <button
+                        onClick={clearDebugLogs}
+                        className="text-[10px] uppercase tracking-widest text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
+                    >
+                        Clear
+                    </button>
+                </div>
+            </div>
+            
+            {testOutput && (
+                <div className="mb-3 p-2 bg-black rounded max-h-60 overflow-y-auto">
+                    <pre className="text-[9px] font-mono whitespace-pre-wrap text-green-400">{testOutput}</pre>
+                </div>
+            )}
+            
+            {debugLogs.length === 0 && !testOutput ? (
+                <div className="opacity-50">No debug events yet. Click "Test Tool Call" to debug API.</div>
+            ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {debugLogs.map((log, index) => (
+                        <div key={`${log.timestamp}-${index}`} className="flex items-start gap-2">
+                            <span className="opacity-50">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                            <span className={`uppercase tracking-widest ${log.type === "error" ? "text-red-400" : log.type === "retry" ? "text-amber-300" : log.type === "raw" ? "text-sky-300" : "text-[var(--color-text-secondary)]"}`}>
+                                {log.type}
+                            </span>
+                            <span className="text-[var(--color-text-primary)]">{log.message}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

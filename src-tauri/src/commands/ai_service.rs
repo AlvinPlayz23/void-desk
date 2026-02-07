@@ -1,69 +1,52 @@
-//! AI Service module using adk-rust
+//! AI Service module using the custom SDK
 //!
-//! This module provides the AI agent infrastructure for VoiDesk,
-//! including session management, agent creation, and streaming responses.
+//! Provides agent creation, tool registration, and session management.
 
-use adk_agent::LlmAgentBuilder;
-use adk_core::Content;
-use adk_model::openai::OpenAIClient;
-use adk_runner::{Runner, RunnerConfig};
-use adk_session::{CreateRequest, GetRequest, InMemorySessionService, SessionService};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::ai_tools;
+use crate::sdk::{Agent, AIClient, SessionStore};
 
 /// AI Service state that persists across requests
 pub struct AIService {
-    session_service: Arc<InMemorySessionService>,
-    /// Cache of user sessions: user_id -> session_id
+    session_store: Arc<SessionStore>,
     user_sessions: RwLock<HashMap<String, String>>,
 }
 
 impl AIService {
     pub fn new() -> Self {
         Self {
-            session_service: Arc::new(InMemorySessionService::new()),
+            session_store: Arc::new(SessionStore::new()),
             user_sessions: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Create an AI agent with the given configuration
+    pub fn session_store(&self) -> Arc<SessionStore> {
+        self.session_store.clone()
+    }
+
     pub fn create_agent(
         api_key: &str,
         base_url: &str,
         model_id: &str,
         active_path: Option<&str>,
-    ) -> Result<adk_agent::LlmAgent, String> {
-        // Build the OpenAI config
-        // For OpenRouter/custom providers, we need to set a custom base URL
-        // adk-rust expects base URL ending with /v1
-        let api_base = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
-            base_url.trim_end_matches('/').to_string()
-        } else {
-            format!("{}/v1", base_url.trim_end_matches('/'))
-        };
+    ) -> Result<Agent> {
+        let client = AIClient::new(api_key, base_url, model_id)?;
 
-        // Create OpenAI-compatible model using the 3-argument compatible method
-        // arguments: api_key, api_base, model_id
-        let model = OpenAIClient::compatible(api_key, &api_base, model_id)
-            .map_err(|e| format!("Failed to create model: {}", e))?;
-
-        // Get all available tools, restricted to active_path
-        let tools = ai_tools::get_all_tools(active_path);
-
-        // Build the agent with tools
-        let mut builder = LlmAgentBuilder::new("voidesk_assistant")
-            .description("VoiDesk AI IDE Assistant")
-            .instruction(
+        let mut agent = Agent::new(client)
+            .with_system_prompt(
                 r#"You are VoiDesk, an intelligent AI coding assistant integrated into a professional IDE.
 
 ## YOUR CAPABILITIES
 
 You have direct access to the user's project through these tools:
-- **read_file(path)**: Read any file in the project to understand code, configs, or data
-- **write_file(path, content)**: Create new files or overwrite existing ones
+- **read_file(path, start_line?, end_line?)**: Read files (optionally a line range) to understand code or configs
+- **write_file(path, content, allow_sensitive?)**: Create new files or overwrite existing ones
+- **edit_file(path, mode, content?, edits?, allow_sensitive?)**: Zed-style edit tool (create, overwrite, or edit with old_text/new_text pairs)
+- **streaming_edit_file(path, mode, content?, edits?, allow_sensitive?)**: Same as `edit_file`, optimized for multi-step edits
 - **list_directory(path)**: Explore the project structure
 - **run_command(command)**: Execute shell commands (npm, git, cargo, etc.)
 
@@ -79,13 +62,13 @@ You have direct access to the user's project through these tools:
 **When asked to "add a feature":**
 1. Use `list_directory` to understand project structure
 2. Use `read_file` to examine relevant files
-3. Use `write_file` to make changes
+3. Use `edit_file` (preferred) or `write_file` to make changes
 4. Use `run_command` to test if appropriate
 
 **When asked to "fix a bug":**
 1. Use `read_file` to see the problematic code
 2. Analyze and explain the issue
-3. Use `write_file` to apply the fix
+3. Use `edit_file` (preferred) or `write_file` to apply the fix
 4. Suggest testing with `run_command`
 
 **When asked "what does X do":**
@@ -96,6 +79,11 @@ You have direct access to the user's project through these tools:
 
 - Paths should be relative to the project root (e.g., "src/main.rs", not "/absolute/path")
 - Always read before writing to avoid breaking existing code
+- `edit_file` modes:
+  - `create`: requires full `content`, fails if file exists
+  - `overwrite`: requires full `content`
+  - `edit`: requires `edits: [{ old_text, new_text }]` (old_text can differ in whitespace; tool performs fuzzy matching)
+- For sensitive paths, set `allow_sensitive=true` explicitly
 - After file operations, confirm what you did ("Created src/new_file.rs with...")
 - If you're unsure about project structure, use `list_directory` first
 - For multi-file changes, tackle one file at a time and explain each step
@@ -107,27 +95,19 @@ You have direct access to the user's project through these tools:
 - Highlight important operations in your explanations
 - If you use a tool, mention it explicitly ("I'll read the file to check...")
 
-Remember: You're not just a chatbot - you're a hands-on coding partner with actual file system access. Use it!"#,
-            )
-            .model(Arc::new(model));
+Remember: You're not just a chatbot - you're a hands-on coding partner with actual file system access. Use it!"#
+                    .to_string(),
+            );
 
-        // Add all tools to the agent
+        let tools = ai_tools::get_all_tools(active_path);
         for tool in tools {
-            builder = builder.tool(tool);
+            agent = agent.with_tool(tool);
         }
 
-        builder
-            .build()
-            .map_err(|e| format!("Failed to build agent: {}", e))
+        Ok(agent)
     }
 
-    /// Get or create a session for a user
-    pub async fn get_or_create_session(
-        &self,
-        user_id: &str,
-        app_name: &str,
-    ) -> Result<String, String> {
-        // Check if we have a cached session
+    pub async fn get_or_create_session(&self, user_id: &str) -> Result<String> {
         {
             let sessions = self.user_sessions.read().await;
             if let Some(session_id) = sessions.get(user_id) {
@@ -135,84 +115,29 @@ Remember: You're not just a chatbot - you're a hands-on coding partner with actu
             }
         }
 
-        // Create a new session
-        let session = self
-            .session_service
-            .create(CreateRequest {
-                app_name: app_name.to_string(),
-                user_id: user_id.to_string(),
-                session_id: None,
-                state: HashMap::new(),
-            })
-            .await
-            .map_err(|e| format!("Failed to create session: {}", e))?;
+        let session = self.session_store.create(None, None).await;
+        let session_id = session.id.clone();
 
-        let session_id = session.id().to_string();
-
-        // Cache the session
-        {
-            let mut sessions = self.user_sessions.write().await;
-            sessions.insert(user_id.to_string(), session_id.clone());
-        }
+        let mut sessions = self.user_sessions.write().await;
+        sessions.insert(user_id.to_string(), session_id.clone());
 
         Ok(session_id)
     }
 
-    /// Create a runner for executing the agent
-    pub fn create_runner(
-        &self,
-        agent: adk_agent::LlmAgent,
-        app_name: &str,
-    ) -> Result<Runner, String> {
-        Runner::new(RunnerConfig {
-            app_name: app_name.to_string(),
-            agent: Arc::new(agent),
-            session_service: self.session_service.clone(),
-            artifact_service: None,
-            memory_service: None,
-            run_config: None,
-        })
-        .map_err(|e| format!("Failed to create runner: {}", e))
-    }
-
-    /// Reset a user's session (for new conversations)
     pub async fn reset_session(&self, user_id: &str) {
         let mut sessions = self.user_sessions.write().await;
         sessions.remove(user_id);
     }
 
-    /// Validate or create a session ID in this service's session store
-    pub async fn validate_or_create_session(
-        &self,
-        session_id: &str,
-        user_id: &str,
-        app_name: &str,
-    ) -> Result<String, String> {
-        match self
-            .session_service
-            .get(GetRequest {
-                app_name: app_name.to_string(),
-                user_id: user_id.to_string(),
-                session_id: session_id.to_string(),
-                after: None,
-                num_recent_events: None,
-            })
-            .await
-        {
-            Ok(_) => Ok(session_id.to_string()),
-            Err(_) => {
-                let session = self
-                    .session_service
-                    .create(CreateRequest {
-                        app_name: app_name.to_string(),
-                        user_id: user_id.to_string(),
-                        session_id: Some(session_id.to_string()),
-                        state: HashMap::new(),
-                    })
-                    .await
-                    .map_err(|e| format!("Failed to recreate session: {}", e))?;
-                Ok(session.id().to_string())
-            }
+    pub async fn validate_or_create_session(&self, session_id: &str) -> Result<String> {
+        if self.session_store.get(session_id).await.is_some() {
+            Ok(session_id.to_string())
+        } else {
+            let session = self
+                .session_store
+                .create(Some(session_id.to_string()), None)
+                .await;
+            Ok(session.id)
         }
     }
 }
@@ -221,9 +146,4 @@ impl Default for AIService {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Create user content from a message string
-pub fn create_user_content(message: &str) -> Content {
-    Content::new("user").with_text(message)
 }

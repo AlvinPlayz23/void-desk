@@ -471,14 +471,6 @@ where
                             break;
                         }
 
-                        if let Ok(wrapped) = serde_json::from_str::<WrappedError>(&message.data) {
-                            let err = OpenAIError::ApiError(wrapped.error);
-                            if let Err(_e) = tx.send(Err(err)) {
-                                break;
-                            }
-                            continue;
-                        }
-
                         let response = match serde_json::from_str::<O>(&message.data) {
                             Err(e) => Err(map_deserialization_error(e, message.data.as_bytes())),
                             Ok(output) => Ok(output),
@@ -524,14 +516,6 @@ where
 
                         if message.data == "[DONE]" {
                             done = true;
-                        }
-
-                        if let Ok(wrapped) = serde_json::from_str::<WrappedError>(&message.data) {
-                            let err = OpenAIError::ApiError(wrapped.error);
-                            if let Err(_e) = tx.send(Err(err)) {
-                                break;
-                            }
-                            continue;
                         }
 
                         let response = event_mapper(message);

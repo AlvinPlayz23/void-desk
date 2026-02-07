@@ -1,9 +1,11 @@
 mod commands;
+mod sdk;
 mod lsp;
 mod terminal;
 mod tracing_setup;
 
 use commands::ai_commands;
+use commands::ai_debug;
 use commands::file_commands;
 use commands::file_watcher;
 use commands::lsp_commands;
@@ -41,6 +43,10 @@ pub fn run() {
             ai_commands::list_chat_sessions,
             ai_commands::delete_chat_session,
             ai_commands::rename_chat_session,
+            // AI Debug
+            ai_debug::debug_tool_call,
+            ai_debug::debug_stream_response,
+            ai_debug::debug_agent_flow,
             // File watcher
             file_watcher::start_file_watcher,
             file_watcher::stop_file_watcher,

@@ -106,10 +106,6 @@ impl Llm for OpenAIClient {
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(chunk) => {
-                        if chunk.choices.is_empty() {
-                            tracing::warn!("OpenAI stream chunk missing choices; skipping chunk");
-                            continue;
-                        }
                         // Handle tool call accumulation
                         if let Some(choice) = chunk.choices.first() {
                             if let Some(tool_calls) = &choice.delta.tool_calls {

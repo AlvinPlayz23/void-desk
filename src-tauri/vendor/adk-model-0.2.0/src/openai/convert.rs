@@ -155,15 +155,10 @@ pub fn from_openai_response(resp: &CreateChatCompletionResponse) -> LlmResponse 
             for tc in tool_calls {
                 let args: serde_json::Value =
                     serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::json!({}));
-                let call_id = if tc.id.is_empty() {
-                    format!("call_{}", tc.function.name)
-                } else {
-                    tc.id.clone()
-                };
                 parts.push(Part::FunctionCall {
                     name: tc.function.name.clone(),
                     args,
-                    id: Some(call_id),
+                    id: Some(tc.id.clone()),
                 });
             }
         }
@@ -220,14 +215,10 @@ pub fn from_openai_chunk(chunk: &CreateChatCompletionStreamResponse) -> LlmRespo
                                 .as_ref()
                                 .and_then(|a| serde_json::from_str(a).ok())
                                 .unwrap_or(serde_json::json!({}));
-                            let call_id = tc
-                                .id
-                                .clone()
-                                .unwrap_or_else(|| format!("call_{}", tc.index));
                             parts.push(Part::FunctionCall {
                                 name: name.clone(),
                                 args,
-                                id: Some(call_id),
+                                id: tc.id.clone(),
                             });
                         }
                     }

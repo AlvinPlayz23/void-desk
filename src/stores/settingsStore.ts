@@ -34,6 +34,7 @@ interface SettingsState {
     aiModels: AIModelConfig[];
     selectedModelId: string;
     inlineCompletionsEnabled: boolean;
+    rawStreamLoggingEnabled: boolean;
 
     // Appearance Settings
     editorFontSize: number;
@@ -58,6 +59,7 @@ interface SettingsState {
     removeAIModel: (id: string) => void;
     setSelectedModelId: (id: string) => void;
     setInlineCompletionsEnabled: (enabled: boolean) => void;
+    setRawStreamLoggingEnabled: (enabled: boolean) => void;
 
     // Actions - Appearance
     setEditorFontSize: (size: number) => void;
@@ -97,6 +99,7 @@ export const useSettingsStore = create<SettingsState>()(
             aiModels: [{ id: "gpt-4o", name: "gpt-4o" }],
             selectedModelId: "gpt-4o",
             inlineCompletionsEnabled: true,
+            rawStreamLoggingEnabled: false,
 
             // Appearance Settings
             editorFontSize: 14,
@@ -133,6 +136,7 @@ export const useSettingsStore = create<SettingsState>()(
             }),
             setSelectedModelId: (id) => set({ selectedModelId: id }),
             setInlineCompletionsEnabled: (enabled) => set({ inlineCompletionsEnabled: enabled }),
+            setRawStreamLoggingEnabled: (enabled) => set({ rawStreamLoggingEnabled: enabled }),
 
             // Actions - Appearance
             setEditorFontSize: (size) => set({ editorFontSize: Math.max(10, Math.min(32, size)) }),
@@ -174,6 +178,7 @@ export const useSettingsStore = create<SettingsState>()(
                 aiModels: [{ id: "gpt-4o", name: "gpt-4o" }],
                 selectedModelId: "gpt-4o",
                 inlineCompletionsEnabled: true,
+                rawStreamLoggingEnabled: false,
                 editorFontSize: 14,
                 editorFontFamily: "JetBrains Mono",
                 uiScale: 100,
