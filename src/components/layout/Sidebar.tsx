@@ -9,10 +9,12 @@ import {
     Search,
     Settings,
     RefreshCw,
+    Clock,
+    Trash2,
 } from "lucide-react";
 
 export function Sidebar() {
-    const { fileTree, rootPath, draggedPaths, clearDraggedPaths } = useFileStore();
+    const { fileTree, rootPath, draggedPaths, clearDraggedPaths, recentProjects, removeRecentProject, clearRecentProjects } = useFileStore();
     const {
         openFolder,
         refreshFileTree,
@@ -20,10 +22,17 @@ export function Sidebar() {
         createNewFolder,
         moveItem,
         batchMoveFiles,
+        openFolderAt,
     } = useFileSystem();
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [isRootDragOver, setIsRootDragOver] = useState(false);
+
+    const handleOpenRecentProject = async (path: string) => {
+        setIsLoading(true);
+        await openFolderAt(path);
+        setIsLoading(false);
+    };
 
     const handleOpenFolder = async () => {
         setIsLoading(true);
@@ -218,20 +227,62 @@ export function Sidebar() {
                 {hasProject ? (
                     <FileTree nodes={filteredTree} depth={0} rootPath={rootPath} />
                 ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                        <FolderOpen className="w-10 h-10 opacity-20 text-[var(--color-text-tertiary)] mb-3" />
-                        <p className="text-sm text-[var(--color-text-tertiary)] mb-2">
-                            No folder open
-                        </p>
-                        <button
-                            onClick={handleOpenFolder}
-                            className="px-3 py-1.5 text-xs bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] rounded-md hover:opacity-90 transition-opacity"
-                        >
-                            Open Folder
-                        </button>
-                        <p className="text-xs text-[var(--color-text-muted)] mt-2">
-                            or press Ctrl+O
-                        </p>
+                    <div className="flex flex-col h-full px-4 pt-6">
+                        <div className="flex flex-col items-center text-center mb-6">
+                            <FolderOpen className="w-10 h-10 opacity-20 text-[var(--color-text-tertiary)] mb-3" />
+                            <p className="text-sm text-[var(--color-text-tertiary)] mb-2">
+                                No folder open
+                            </p>
+                            <button
+                                onClick={handleOpenFolder}
+                                className="px-3 py-1.5 text-xs bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] rounded-md hover:opacity-90 transition-opacity"
+                            >
+                                Open Folder
+                            </button>
+                            <p className="text-xs text-[var(--color-text-muted)] mt-2">
+                                or press Ctrl+O
+                            </p>
+                        </div>
+
+                        {recentProjects.length > 0 && (
+                            <div className="mt-2">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                                        <Clock className="w-3 h-3" />
+                                        Recent
+                                    </div>
+                                    <button
+                                        onClick={clearRecentProjects}
+                                        className="icon-btn w-5 h-5"
+                                        title="Clear Recent Projects"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                    </button>
+                                </div>
+                                <div className="flex flex-col gap-0.5">
+                                    {recentProjects.map((project) => (
+                                        <button
+                                            key={project.path}
+                                            onClick={() => handleOpenRecentProject(project.path)}
+                                            className="group flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-[var(--color-void-700)] transition-colors"
+                                        >
+                                            <FolderOpen className="w-3.5 h-3.5 text-[var(--color-text-muted)] flex-shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs text-[var(--color-text-secondary)] truncate">{project.name}</p>
+                                                <p className="text-[10px] text-[var(--color-text-muted)] truncate">{project.path}</p>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); removeRecentProject(project.path); }}
+                                                className="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity"
+                                                title="Remove"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

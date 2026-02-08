@@ -106,6 +106,8 @@ export const useUIStore = create<UIState>()(
                 aiPanelWidth: state.aiPanelWidth,
                 terminalHeight: state.terminalHeight,
                 isSidebarVisible: state.isSidebarVisible,
+                isTerminalVisible: state.isTerminalVisible,
+                isAIPanelVisible: state.isAIPanelVisible,
             }),
         }
     )

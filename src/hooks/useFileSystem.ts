@@ -41,12 +41,25 @@ export function useFileSystem() {
             if (selected && typeof selected === "string") {
                 setRootPath(selected);
                 await refreshFileTree(selected);
+                useFileStore.getState().addRecentProject(selected);
                 return selected;
             }
             return null;
         } catch (error) {
             console.error("Failed to open folder:", error);
             return null;
+        }
+    };
+
+    const openFolderAt = async (path: string): Promise<boolean> => {
+        try {
+            setRootPath(path);
+            await refreshFileTree(path);
+            useFileStore.getState().addRecentProject(path);
+            return true;
+        } catch (error) {
+            console.error("Failed to open folder:", error);
+            return false;
         }
     };
 
@@ -244,6 +257,7 @@ export function useFileSystem() {
     return {
         rootPath,
         openFolder,
+        openFolderAt,
         refreshFileTree,
         listDirectory,
         readFile,

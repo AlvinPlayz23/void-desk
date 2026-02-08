@@ -14,6 +14,21 @@ revert the things done in feature-logs/2026-01-29.md
 
 
 
+codex-sugestions-8/2/26:
+- Add a real patch tool: apply_patch(path, patch) (unified diff or Zed‑style patch) and prefer it for edits over edit_file when possible.
+  - Make streaming_edit_file truly “streaming”: accept edits incrementally (or allow multiple tool calls) and apply/reveal each edit as it resolves; keep the diff UI updated per edit.
+  - Improve fuzzy matching: scoring + best‑match selection (not just whitespace normalization), plus better “ambiguous matches” diagnostics (show candidate line numbers).
+  - Add read_file previews + caps: optional max_chars or max_lines, and a read_file_metadata tool (size, line count, mtime) to avoid huge reads.
+  - Add list_directory recursion + filters: recursive, max_entries, glob, ignore (helps the agent discover projects faster).
+  - Add tool permissions UX: when a sensitive path is blocked, return a structured error payload that the UI can render as “Confirm to proceed”, then retry with allow_sensitive=true.
+  - Add tests for tools (Rust): unit tests for resolve_and_validate_path, sensitive path detection, fuzzy matching, overlap detection, CRLF handling.
+  - Clean up compile warnings later (optional): unused exports/imports in src-tauri/src/sdk/mod.rs and src-tauri/src/sdk/stream/mod.rs.
+- Tool call batching: allow the model to propose multiple tool ops, then execute sequentially with progress + rollback hints
+ - add retry timeout feature
+- recent projects list, reopen last session, restore tabs/layout (might be completed soon)
+--[x] in theTerminal: multiple tabs, split panes [working, but still secting terminal still neded]
+
+
 
 no placeholder or mockups for rewest thingy
 

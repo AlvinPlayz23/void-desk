@@ -6,7 +6,7 @@ import { StatusBar } from "./StatusBar";
 import { CodeEditor } from "@/components/editor/CodeEditor";
 import { EditorTabs } from "@/components/editor/EditorTabs";
 import { AIChat } from "@/components/ai/AIChat";
-import { TerminalComponent } from "@/components/terminal/TerminalComponent";
+import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { CommandPalette } from "@/components/ui/CommandPalette";
 import { SettingsPage } from "@/components/settings/SettingsPage";
 import { MessageSquare, PanelLeftClose, PanelLeft, Terminal as TerminalIcon, X, Settings as SettingsIcon } from "lucide-react";
@@ -204,7 +204,7 @@ export function MainLayout() {
                                 </button>
                             </div>
                             <div className="flex-1 overflow-hidden">
-                                <TerminalComponent />
+                                <TerminalPanel />
                             </div>
                         </div>
                     )}
