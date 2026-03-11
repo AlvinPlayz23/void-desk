@@ -30,10 +30,8 @@ pub struct ModelInfo {
 
 pub fn infer_model_capabilities(model_id: &str) -> ModelCapabilities {
     let id = model_id.to_lowercase();
-    let supports_reasoning = id.contains("o1")
-        || id.contains("reason")
-        || id.contains("r1")
-        || id.contains("deepseek");
+    let supports_reasoning =
+        id.contains("o1") || id.contains("reason") || id.contains("r1") || id.contains("deepseek");
     let supports_vision = id.contains("vision")
         || id.contains("gpt-4o")
         || id.contains("gpt-4.1")
@@ -46,6 +44,44 @@ pub fn infer_model_capabilities(model_id: &str) -> ModelCapabilities {
         supports_tools: true,
         supports_vision,
         supports_reasoning,
+    }
+}
+
+pub fn infer_model_context_window(model_id: &str) -> Option<usize> {
+    let id = model_id.to_lowercase();
+
+    if id.contains("gpt-4.1") || id.contains("gpt-4o") || id.contains("gpt-4-turbo") {
+        return Some(128_000);
+    }
+
+    if id.contains("gpt-3.5") {
+        return Some(16_000);
+    }
+
+    if id.contains("claude-3") || id.contains("gemini") || id.contains("deepseek") {
+        return Some(128_000);
+    }
+
+    if id.contains("llama") || id.contains("mistral") || id.contains("qwen") {
+        return Some(32_000);
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::infer_model_context_window;
+
+    #[test]
+    fn infers_known_openai_context_windows() {
+        assert_eq!(infer_model_context_window("gpt-4o"), Some(128_000));
+        assert_eq!(infer_model_context_window("gpt-3.5-turbo"), Some(16_000));
+    }
+
+    #[test]
+    fn returns_none_for_unknown_models() {
+        assert_eq!(infer_model_context_window("custom-local-model"), None);
     }
 }
 

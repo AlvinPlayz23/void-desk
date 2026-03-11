@@ -22,6 +22,7 @@ interface UIState {
     isSettingsPageOpen: boolean;
     settingsCategory: SettingsCategory;
     commandPaletteMode: "command" | "file";
+    sidebarView: "explorer" | "search";
 
     // Actions
     setTheme: (theme: Theme) => void;
@@ -30,6 +31,8 @@ interface UIState {
     setSidebarWidth: (width: number) => void;
     setAIPanelWidth: (width: number) => void;
 
+    setSidebarView: (view: "explorer" | "search") => void;
+    openSidebar: () => void;
     toggleSidebar: () => void;
     toggleAIPanel: () => void;
     toggleTerminal: () => void;
@@ -63,6 +66,7 @@ export const useUIStore = create<UIState>()(
             isSettingsPageOpen: false,
             settingsCategory: "appearance",
             commandPaletteMode: "command",
+            sidebarView: "explorer",
 
             setTheme: (theme) => set({ theme }),
 
@@ -77,6 +81,8 @@ export const useUIStore = create<UIState>()(
 
             setAIPanelWidth: (width) => set({ aiPanelWidth: Math.max(280, Math.min(600, width)) }),
 
+            setSidebarView: (view) => set({ sidebarView: view }),
+            openSidebar: () => set({ isSidebarVisible: true }),
             toggleSidebar: () => set({ isSidebarVisible: !get().isSidebarVisible }),
 
             toggleAIPanel: () => set({ isAIPanelVisible: !get().isAIPanelVisible }),

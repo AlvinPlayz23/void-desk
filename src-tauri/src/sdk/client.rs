@@ -15,12 +15,17 @@ use crate::sdk::provider::{ModelInfo, OpenAICompatibleProvider, Provider};
 #[derive(Clone)]
 pub struct AIClient {
     provider: OpenAICompatibleProvider,
+    api_key: String,
+    base_url: String,
 }
 
 impl AIClient {
     pub fn new(api_key: &str, base_url: &str, model: &str) -> Result<Self> {
+        let provider = OpenAICompatibleProvider::new(api_key, base_url, model)?;
         Ok(Self {
-            provider: OpenAICompatibleProvider::new(api_key, base_url, model)?,
+            provider,
+            api_key: api_key.to_string(),
+            base_url: base_url.to_string(),
         })
     }
 
@@ -37,13 +42,14 @@ impl AIClient {
     }
 
     pub fn with_model(mut self, model: &str) -> Self {
-        self.provider = OpenAICompatibleProvider::new(
-            "", // This won't work - keeping for API compat
-            self.provider.base_url(),
-            model,
-        )
-        .unwrap_or(self.provider);
+        if let Ok(client) = self.switch_model(model) {
+            self = client;
+        }
         self
+    }
+
+    pub fn switch_model(&self, model: &str) -> Result<Self> {
+        Self::new(&self.api_key, &self.base_url, model)
     }
 
     pub async fn complete(&self, request: ChatRequest) -> Result<ChatResponse> {

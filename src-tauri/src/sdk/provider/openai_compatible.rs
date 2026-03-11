@@ -6,7 +6,7 @@ use crate::sdk::core::{ChatRequest, ChatResponse, StreamEvent};
 use crate::sdk::stream::parse_sse_stream_with_debug;
 use crate::sdk::transport::HttpTransport;
 
-use super::{infer_model_capabilities, ModelInfo, Provider};
+use super::{infer_model_capabilities, infer_model_context_window, ModelInfo, Provider};
 
 /// OpenAI-compatible API provider
 #[derive(Clone)]
@@ -43,7 +43,7 @@ impl Provider for OpenAICompatibleProvider {
             id: self.model.clone(),
             display_name: self.model.clone(),
             provider_id: self.id().to_string(),
-            context_window: None,
+            context_window: infer_model_context_window(&self.model),
             max_output_tokens: None,
             capabilities: infer_model_capabilities(&self.model),
         }
@@ -69,8 +69,14 @@ impl Provider for OpenAICompatibleProvider {
         request.stream = true;
 
         let body = serde_json::to_string(&request)?;
-        let byte_stream = self.transport.post_stream("chat/completions", &body).await?;
+        let byte_stream = self
+            .transport
+            .post_stream("chat/completions", &body)
+            .await?;
 
-        Ok(Box::new(parse_sse_stream_with_debug(byte_stream, debug_raw)))
+        Ok(Box::new(parse_sse_stream_with_debug(
+            byte_stream,
+            debug_raw,
+        )))
     }
 }

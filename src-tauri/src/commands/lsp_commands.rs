@@ -1,10 +1,10 @@
 // LSP Tauri Commands
 
 use crate::lsp::LspManager;
-use std::sync::Arc;
-use tauri::State;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
+use tauri::State;
 
 pub struct LspState {
     pub manager: Arc<LspManager>,
@@ -27,10 +27,7 @@ pub struct CompletionItem {
 }
 
 #[tauri::command]
-pub async fn lsp_set_root(
-    state: State<'_, LspState>,
-    root_path: String,
-) -> Result<(), String> {
+pub async fn lsp_set_root(state: State<'_, LspState>, root_path: String) -> Result<(), String> {
     state.manager.set_root_path(root_path).await;
     Ok(())
 }
@@ -53,7 +50,10 @@ pub async fn lsp_completion(
     character: u32,
     language: String,
 ) -> Result<Value, String> {
-    state.manager.completion(&language, &path, line, character).await
+    state
+        .manager
+        .completion(&language, &path, line, character)
+        .await
 }
 
 #[tauri::command]

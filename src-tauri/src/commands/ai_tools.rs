@@ -13,7 +13,6 @@ use std::sync::Arc;
 
 use crate::sdk::{AgentTool, AgentToolOutput, ToolSchemaFormat};
 
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ReadFileArgs {
     pub path: String,
@@ -79,7 +78,10 @@ fn resolve_and_validate_path(root: &str, target: &str) -> Result<PathBuf> {
         for component in Path::new(target).components() {
             match component {
                 Component::ParentDir | Component::Prefix(_) | Component::RootDir => {
-                    return Err(anyhow!("Invalid path: '{}' is not a safe relative path", target));
+                    return Err(anyhow!(
+                        "Invalid path: '{}' is not a safe relative path",
+                        target
+                    ));
                 }
                 _ => {}
             }
@@ -126,7 +128,10 @@ fn is_sensitive_path(path: &Path) -> bool {
     for component in path.components() {
         if let Component::Normal(name) = component {
             if let Some(name) = name.to_str() {
-                if sensitive_dirs.iter().any(|dir| name.eq_ignore_ascii_case(dir)) {
+                if sensitive_dirs
+                    .iter()
+                    .any(|dir| name.eq_ignore_ascii_case(dir))
+                {
                     return true;
                 }
             }
@@ -246,14 +251,14 @@ impl AgentTool for ReadFileTool {
 
         Ok(AgentToolOutput::new(
             json!({
-            "success": true,
-            "path": args.path,
-            "content": selected,
-            "truncated": false,
-            "start_line": start_line,
-            "end_line": end_line,
-            "total_lines": total_lines
-        })
+                "success": true,
+                "path": args.path,
+                "content": selected,
+                "truncated": false,
+                "start_line": start_line,
+                "end_line": end_line,
+                "total_lines": total_lines
+            })
             .to_string(),
         ))
     }
@@ -346,10 +351,10 @@ impl AgentTool for WriteFileTool {
 
         Ok(AgentToolOutput::new(
             json!({
-            "success": true,
-            "path": args.path,
-            "bytes_written": args.content.len()
-        })
+                "success": true,
+                "path": args.path,
+                "bytes_written": args.content.len()
+            })
             .to_string(),
         ))
     }
@@ -692,11 +697,11 @@ impl AgentTool for ListDirectoryTool {
 
         Ok(AgentToolOutput::new(
             json!({
-            "success": true,
-            "path": args.path,
-            "entries": items,
-            "count": items.len()
-        })
+                "success": true,
+                "path": args.path,
+                "entries": items,
+                "count": items.len()
+            })
             .to_string(),
         ))
     }
@@ -767,11 +772,11 @@ impl AgentTool for RunCommandTool {
 
         Ok(AgentToolOutput::new(
             json!({
-            "success": out.status.success(),
-            "exit_code": out.status.code(),
-            "stdout": stdout,
-            "stderr": stderr
-        })
+                "success": out.status.success(),
+                "exit_code": out.status.code(),
+                "stdout": stdout,
+                "stderr": stderr
+            })
             .to_string(),
         ))
     }

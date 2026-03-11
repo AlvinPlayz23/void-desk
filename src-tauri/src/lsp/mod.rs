@@ -2,7 +2,7 @@
 // Provides Language Server Protocol integration
 
 pub mod manager;
-pub mod transport;
 pub mod protocol;
+pub mod transport;
 
 pub use manager::LspManager;

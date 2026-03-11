@@ -5,15 +5,16 @@ import { useSettingsStore } from "@/stores/settingsStore";
 export function AIDebug() {
     const [output, setOutput] = useState<string>("");
     const [loading, setLoading] = useState(false);
-    const { apiKey, baseUrl, modelId } = useSettingsStore();
+    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels } = useSettingsStore();
+    const modelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
 
     const runDebugToolCall = async () => {
         setLoading(true);
         setOutput("Running debug_tool_call...\n");
         try {
             const result = await invoke<string>("debug_tool_call", {
-                apiKey,
-                baseUrl,
+                apiKey: openAIKey,
+                baseUrl: openAIBaseUrl,
                 modelId,
             });
             setOutput(result);
@@ -28,8 +29,8 @@ export function AIDebug() {
         setOutput("Running debug_stream_response...\n");
         try {
             const result = await invoke<string>("debug_stream_response", {
-                apiKey,
-                baseUrl,
+                apiKey: openAIKey,
+                baseUrl: openAIBaseUrl,
                 modelId,
             });
             setOutput(result);
@@ -61,7 +62,7 @@ export function AIDebug() {
             </div>
 
             <div className="text-sm text-zinc-400 mb-2">
-                API: {baseUrl} | Model: {modelId}
+                API: {openAIBaseUrl} | Model: {modelId}
             </div>
 
             <pre className="flex-1 overflow-auto bg-black p-4 rounded text-xs font-mono whitespace-pre-wrap">

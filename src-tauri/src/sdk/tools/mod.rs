@@ -1,3 +1,3 @@
 pub mod registry;
 
-pub use registry::{AgentTool, AgentToolOutput, ToolRegistry};
+pub use registry::{AgentTool, AgentToolOutput, ToolPolicy, ToolRegistry};

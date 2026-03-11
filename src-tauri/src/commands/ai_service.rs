@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::ai_tools;
-use crate::sdk::{Agent, AIClient, SessionStore};
+use crate::sdk::{AIClient, Agent, SessionStore, ToolPolicy};
 
 /// AI Service state that persists across requests
 pub struct AIService {
@@ -98,6 +98,31 @@ You have direct access to the user's project through these tools:
 Remember: You're not just a chatbot - you're a hands-on coding partner with actual file system access. Use it!"#
                     .to_string(),
             );
+
+        let command_allowlist = std::env::var("VOIDESK_COMMAND_ALLOWLIST")
+            .ok()
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(|v| v.trim().to_string())
+                    .filter(|v| !v.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty());
+        let allow_command_tool = std::env::var("VOIDESK_ALLOW_COMMAND_TOOL")
+            .ok()
+            .map(|value| value.eq_ignore_ascii_case("true"))
+            .unwrap_or(true);
+        let command_timeout_ms = std::env::var("VOIDESK_COMMAND_TIMEOUT_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(120_000);
+
+        agent = agent.with_tool_policy(ToolPolicy {
+            allow_command_tool,
+            command_allowlist,
+            command_timeout_ms,
+        });
 
         let tools = ai_tools::get_all_tools(active_path);
         for tool in tools {

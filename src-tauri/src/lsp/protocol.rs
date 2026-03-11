@@ -2,14 +2,11 @@
 // Re-exports and helper types for LSP communication
 
 use lsp_types::{
-    InitializeParams, InitializeResult, InitializedParams,
-    TextDocumentIdentifier, TextDocumentPositionParams, Position,
-    CompletionParams, CompletionResponse, Hover, HoverParams,
-    DidOpenTextDocumentParams, DidChangeTextDocumentParams,
-    DidSaveTextDocumentParams, DidCloseTextDocumentParams,
-    TextDocumentItem, VersionedTextDocumentIdentifier,
-    TextDocumentContentChangeEvent, PublishDiagnosticsParams,
-    Url,
+    CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, Hover, HoverParams, InitializeParams,
+    InitializeResult, InitializedParams, Position, PublishDiagnosticsParams,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, Url, VersionedTextDocumentIdentifier,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,7 +24,7 @@ pub fn path_to_uri(path: &str) -> Result<Url, String> {
     if path.starts_with("file:") {
         return Url::parse(path).map_err(|e| e.to_string());
     }
-    
+
     // Canonicalize to ensure consistent path representation
     let canonical = canonicalize_if_possible(Path::new(path));
     Url::from_file_path(&canonical).map_err(|_| format!("Invalid path: {}", path))
@@ -69,7 +66,7 @@ pub fn create_did_open_params(path: &str, content: &str, version: i32) -> Result
 /// Create completion params
 pub fn create_completion_params(path: &str, line: u32, character: u32) -> Result<Value, String> {
     let uri = path_to_uri(path)?;
-    
+
     let params = CompletionParams {
         text_document_position: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri },
@@ -86,7 +83,7 @@ pub fn create_completion_params(path: &str, line: u32, character: u32) -> Result
 /// Create hover params
 pub fn create_hover_params(path: &str, line: u32, character: u32) -> Result<Value, String> {
     let uri = path_to_uri(path)?;
-    
+
     let params = HoverParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri },
@@ -102,10 +99,7 @@ pub fn create_did_change_params(path: &str, content: &str, version: i32) -> Resu
     let uri = path_to_uri(path)?;
 
     let params = DidChangeTextDocumentParams {
-        text_document: VersionedTextDocumentIdentifier {
-            uri,
-            version,
-        },
+        text_document: VersionedTextDocumentIdentifier { uri, version },
         content_changes: vec![TextDocumentContentChangeEvent {
             range: None,
             range_length: None,

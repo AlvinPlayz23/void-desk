@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon, Plus, ChevronDown, Bug } from "lucide-react";
+import { Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon, Plus, ChevronDown, Bug, FileText, CornerDownLeft, RefreshCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { invoke } from "@tauri-apps/api/core";
 import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
-import { ChatSession, ToolOperation, useChatStore } from "@/stores/chatStore";
+import { ChatSession, Message, ToolOperation, useChatStore } from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -23,6 +23,7 @@ export function AIChat() {
     const [showFileSearch, setShowFileSearch] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [showSessions, setShowSessions] = useState(false);
+    const [sessionSearch, setSessionSearch] = useState("");
     const [showDebug, setShowDebug] = useState(false);
     const [showModelMenu, setShowModelMenu] = useState(false);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -87,6 +88,7 @@ export function AIChat() {
         const handleClick = (e: MouseEvent) => {
             if (sessionsRef.current && !sessionsRef.current.contains(e.target as Node)) {
                 setShowSessions(false);
+                setSessionSearch("");
             }
             if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
                 setShowModelMenu(false);
@@ -157,25 +159,23 @@ export function AIChat() {
     const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
     const activeModelName =
         aiModels.find((model) => model.id === activeModelId)?.name || activeModelId || "Model";
+    const hasMessages = messages.length > 0;
 
     return (
         <div className="flex flex-col h-full bg-[var(--color-surface-base)]">
             {/* Header */}
-            <div className="panel-header border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 py-2 flex items-center justify-between">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
                 <div className="flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5 text-[var(--color-accent-primary)]" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-tertiary)] hidden md:inline">
-                        {currentSessionName}
-                    </span>
-                </div>
-                <div className="flex items-center gap-1">
+                    <Sparkles className="w-4 h-4 text-gray-500" />
                     <div className="relative" ref={sessionsRef}>
                         <button
                             onClick={() => setShowSessions(!showSessions)}
-                            className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded flex items-center gap-1 text-[10px]"
+                            className="flex items-center gap-1.5 bg-[#1c1c24] px-2.5 py-1 rounded-full border border-white/5 hover:border-white/10 transition-colors"
                             title="Sessions"
                         >
-                            <ChevronDown className={`w-3.5 h-3.5 opacity-50 transition-transform ${showSessions ? "rotate-180" : ""}`} />
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span className="text-[11px] font-medium text-gray-300">{currentSessionName}</span>
+                            <ChevronDown className={`w-3 h-3 text-gray-500 transition-transform ${showSessions ? "rotate-180" : ""}`} />
                         </button>
                         {showSessions && (
                             <div className="absolute right-0 top-full mt-2 w-48 max-h-96 overflow-y-auto bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg shadow-xl z-50">
@@ -186,7 +186,24 @@ export function AIChat() {
                                     <Plus className="w-3.5 h-3.5" />
                                     New Chat
                                 </button>
-                                {sessions.map((session) => (
+                                <div className="px-2 py-1.5 border-b border-[var(--color-border-subtle)]">
+                                    <input
+                                        type="text"
+                                        value={sessionSearch}
+                                        onChange={(e) => setSessionSearch(e.target.value)}
+                                        placeholder="Search sessions..."
+                                        className="w-full px-2 py-1 bg-[var(--color-void-900)] border border-[var(--color-border-subtle)] rounded text-xs text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent-primary)]"
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                </div>
+                                {sessions
+                                    .filter((session) => {
+                                        if (!sessionSearch.trim()) return true;
+                                        const q = sessionSearch.toLowerCase();
+                                        if (session.name.toLowerCase().includes(q)) return true;
+                                        return session.messages.some((m) => m.content.toLowerCase().includes(q));
+                                    })
+                                    .map((session) => (
                                     <div
                                         key={session.id}
                                         className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] group ${activeSessionId === session.id ? "bg-[var(--color-void-700)] text-[var(--color-accent-primary)]" : ""}`}
@@ -216,152 +233,321 @@ export function AIChat() {
                             </div>
                         )}
                     </div>
+                </div>
+                <div className="flex items-center gap-2 text-gray-500">
                     <button
                         onClick={() => setShowDebug(!showDebug)}
-                        className={`icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded ${showDebug ? "text-[var(--color-accent-primary)]" : ""}`}
+                        className={`hover:text-gray-300 transition-colors ${showDebug ? "text-emerald-500" : ""}`}
                         title="AI Debug"
                     >
-                        <Bug className="w-3.5 h-3.5 opacity-70" />
+                        <Bug className="w-4 h-4" />
+                    </button>
+                    <button onClick={handleNewSession} className="hover:text-gray-300 transition-colors" title="New Chat">
+                        <Plus className="w-4 h-4" />
                     </button>
                     {messages.length > 0 && (
-                        <button onClick={() => window.confirm("Clear history?") && clearChat()} className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded">
-                            <Trash2 className="w-3.5 h-3.5 opacity-50" />
+                        <button onClick={() => window.confirm("Clear history?") && clearChat()} className="hover:text-gray-300 transition-colors" title="Clear">
+                            <Trash2 className="w-3.5 h-3.5" />
                         </button>
                     )}
-                    <button onClick={() => openSettingsPage("ai")} className="icon-btn p-1.5 hover:bg-[var(--color-void-700)] rounded" title="AI Settings">
-                        <Settings2 className="w-3.5 h-3.5 opacity-50" />
+                    <button onClick={() => openSettingsPage("ai")} className="hover:text-gray-300 transition-colors" title="AI Settings">
+                        <Settings2 className="w-4 h-4" />
                     </button>
                 </div>
             </div>
 
-            {/* Messages */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6">
+            {/* Content area */}
+            <div className="flex-1 flex flex-col overflow-hidden">
                 {showDebug && (
-                <DebugPanel debugLogs={debugLogs} clearDebugLogs={clearDebugLogs} />
-                )}
-                {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center opacity-20">
-                        <Sparkles className="w-12 h-12 mb-4" />
-                        <p className="text-sm uppercase tracking-[0.2em] font-bold">Awaiting Input</p>
+                    <div className="p-4 border-b border-white/5">
+                        <DebugPanel debugLogs={debugLogs} clearDebugLogs={clearDebugLogs} />
                     </div>
-                ) : (
-                    messages.map((msg, idx) => (
-                        <div key={idx} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"} gap-3`}>
-                            <div className={`max-w-[92%] rounded-xl px-4 py-3 text-[13px] leading-relaxed relative ${msg.role === "user"
-                                ? "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] shadow-[0_4px_20px_rgba(99,102,241,0.2)]"
-                                : "bg-[var(--color-surface-overlay)] border border-[var(--color-border-subtle)] text-[var(--color-text-primary)]"
-                                }`}>
-                                {msg.toolOperations && <ToolOperationDisplay operations={msg.toolOperations} />}
-                                <MarkdownContent content={msg.content} />
+                )}
+
+                {!hasMessages ? (
+                    <div className="flex-1 flex flex-col p-4">
+                        <PromptComposer
+                            input={input}
+                            handleInputChange={handleInputChange}
+                            setShowFileSearch={setShowFileSearch}
+                            handleSend={handleSend}
+                            handleStop={handleStop}
+                            isStreaming={isStreaming}
+                            activeModelName={activeModelName}
+                            activeModelId={activeModelId}
+                            aiModels={aiModels}
+                            showModelMenu={showModelMenu}
+                            setShowModelMenu={setShowModelMenu}
+                            modelMenuRef={modelMenuRef}
+                            setSelectedModelId={setSelectedModelId}
+                            showFileSearch={showFileSearch}
+                            filteredFiles={filteredFiles}
+                            handleSelectFile={handleSelectFile}
+                            dockedBottom={false}
+                        />
+
+                        {/* Empty state center - matching mock glow pattern */}
+                        <div className="flex-1 flex flex-col items-center justify-center -mt-6">
+                            <div className="relative w-32 h-32 flex items-center justify-center mb-8">
+                                <div className="absolute inset-0 opacity-60" style={{
+                                    backgroundImage: "radial-gradient(circle, #10b981 1px, transparent 1px)",
+                                    backgroundSize: "6px 6px",
+                                    maskImage: "radial-gradient(circle, black, transparent 80%)",
+                                    WebkitMaskImage: "radial-gradient(circle, black, transparent 80%)",
+                                }} />
+                                <div className="w-16 h-16 rounded-full border border-emerald-500/10 flex items-center justify-center">
+                                    <div className="w-10 h-10 rounded-full bg-emerald-500/5 flex items-center justify-center border border-emerald-500/10">
+                                        <div className="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col items-center gap-3 text-gray-500">
+                                <div className="flex items-center gap-2">
+                                    <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-gray-400">@</span>
+                                    <span className="text-[12px]">to add files</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-gray-400">@@</span>
+                                    <span className="text-[12px]">to mention threads</span>
+                                </div>
+                                <div className="flex items-center gap-2 pt-4">
+                                    <span className="text-[10px] uppercase tracking-widest text-gray-600 font-medium">Command Palette</span>
+                                    <div className="flex gap-1">
+                                        <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-gray-400">Ctrl</span>
+                                        <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-gray-400">Shift</span>
+                                        <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-gray-400">P</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    ))
-                )}
-                {isStreaming && (
-                    <div className="flex items-center gap-2 text-[10px] opacity-40 px-2 font-mono uppercase tracking-widest">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Processing...
                     </div>
-                )}
-                {!isStreaming && messages.length > 0 && (
-                    messages[messages.length - 1].content.includes("Error: Stream error: Model error: Stream error: stream failed: Invalid status code: 429") ||
-                    messages[messages.length - 1].content.includes("Error: Stream error: Model error: Stream error: stream failed: Invalid status code: 422")
-                ) && (
-                    <div className="flex items-center gap-2 px-2">
-                        <button
-                            onClick={retryLastMessage}
-                            className="text-[10px] uppercase tracking-widest text-[var(--color-accent-primary)] hover:text-[var(--color-text-primary)]"
-                        >
-                            Retry
-                        </button>
-                    </div>
+                ) : (
+                    <>
+                        {/* Messages scroll area */}
+                        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-5">
+                            {messages.map((msg, idx) => (
+                                <MessageBubble key={idx} message={msg} />
+                            ))}
+                            {isStreaming && (
+                                <div className="flex items-center gap-2 text-[10px] opacity-40 px-2 font-mono uppercase tracking-widest">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Processing...
+                                </div>
+                            )}
+                            {!isStreaming && messages.length > 0 && (
+                                messages[messages.length - 1].content.includes("Invalid status code: 429") ||
+                                messages[messages.length - 1].content.includes("Invalid status code: 422")
+                            ) && (
+                                <div className="flex items-center gap-2 px-2">
+                                    <button
+                                        onClick={retryLastMessage}
+                                        className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-emerald-500 hover:text-emerald-400 transition-colors"
+                                    >
+                                        <RefreshCcw className="w-3 h-3" />
+                                        Retry
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Bottom prompt */}
+                        <div className="border-t border-white/5">
+                            <ContextPills />
+                            <PromptComposer
+                                input={input}
+                                handleInputChange={handleInputChange}
+                                setShowFileSearch={setShowFileSearch}
+                                handleSend={handleSend}
+                                handleStop={handleStop}
+                                isStreaming={isStreaming}
+                                activeModelName={activeModelName}
+                                activeModelId={activeModelId}
+                                aiModels={aiModels}
+                                showModelMenu={showModelMenu}
+                                setShowModelMenu={setShowModelMenu}
+                                modelMenuRef={modelMenuRef}
+                                setSelectedModelId={setSelectedModelId}
+                                showFileSearch={showFileSearch}
+                                filteredFiles={filteredFiles}
+                                handleSelectFile={handleSelectFile}
+                                dockedBottom={true}
+                            />
+                        </div>
+                    </>
                 )}
             </div>
+        </div>
+    );
+}
 
-            {/* Input & Search Area */}
-            <div className="relative border-t border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)]">
+function MessageBubble({ message }: { message: Message }) {
+    const isUser = message.role === "user";
+    const parts = message.parts ?? [];
+
+    if (isUser) {
+        return (
+            <div className="flex flex-col items-end">
+                <div className="max-w-[88%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[13px] leading-relaxed bg-emerald-500/15 border border-emerald-500/20 text-gray-200">
+                    <MarkdownContent content={message.content} />
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col items-start">
+            <div className="max-w-[95%] text-[13px] leading-relaxed text-gray-300 space-y-2">
+                {parts.map((part, i) => {
+                    if (part.type === "text") {
+                        return part.text ? <MarkdownContent key={i} content={part.text} /> : null;
+                    }
+                    return (
+                        <ToolOperationDisplay key={part.id ?? i} operations={[part.toolOperation]} />
+                    );
+                })}
+                {parts.length === 0 && message.content && (
+                    <MarkdownContent content={message.content} />
+                )}
+            </div>
+        </div>
+    );
+}
+
+interface PromptComposerProps {
+    input: string;
+    handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+    setShowFileSearch: (show: boolean) => void;
+    handleSend: () => void;
+    handleStop: () => void;
+    isStreaming: boolean;
+    activeModelName: string;
+    activeModelId: string;
+    aiModels: { id: string; name?: string }[];
+    showModelMenu: boolean;
+    setShowModelMenu: (show: boolean) => void;
+    modelMenuRef: React.RefObject<HTMLDivElement | null>;
+    setSelectedModelId: (id: string) => void;
+    showFileSearch: boolean;
+    filteredFiles: string[];
+    handleSelectFile: (path: string) => void;
+    dockedBottom: boolean;
+}
+
+function PromptComposer(props: PromptComposerProps) {
+    const {
+        input,
+        handleInputChange,
+        setShowFileSearch,
+        handleSend,
+        handleStop,
+        isStreaming,
+        activeModelName,
+        activeModelId,
+        aiModels,
+        showModelMenu,
+        setShowModelMenu,
+        modelMenuRef,
+        setSelectedModelId,
+        showFileSearch,
+        filteredFiles,
+        handleSelectFile,
+        dockedBottom,
+    } = props;
+
+    return (
+        <div className={`relative ${dockedBottom ? "mx-3 mb-3 mt-2" : "mt-2"}`}>
+            <div className="bg-[#16161e] border border-white/5 rounded-xl relative">
                 {showFileSearch && (
-                    <div className="absolute bottom-full left-0 w-full max-h-64 overflow-y-auto bg-[var(--color-surface-overlay)] border-t border-[var(--color-border-subtle)] shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50">
+                    <div className={`absolute left-0 w-full max-h-64 overflow-y-auto bg-[#16161e] border border-white/5 shadow-[0_10px_30px_rgba(0,0,0,0.6)] rounded-lg z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
                         {filteredFiles.length > 0 ? filteredFiles.map(file => (
                             <button
                                 key={file}
                                 onClick={() => handleSelectFile(file)}
-                                className="w-full text-left px-4 py-2.5 text-xs hover:bg-[var(--color-accent-primary)] hover:text-[var(--color-surface-base)] transition-all flex items-center gap-3 border-b border-[var(--color-border-subtle)]"
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-white/5 transition-colors flex items-center gap-2.5 border-b border-white/5 last:border-b-0"
                             >
-                                <FileIcon className="w-3.5 h-3.5 opacity-40" />
+                                <FileIcon className="w-3.5 h-3.5 text-gray-500" />
                                 <div className="flex flex-col truncate">
-                                    <span className="font-medium">{file.split(/[/\\]/).pop()}</span>
-                                    <span className="text-[9px] opacity-30 truncate">{file}</span>
+                                    <span className="font-medium text-gray-300">{file.split(/[/\\]/).pop()}</span>
+                                    <span className="text-[9px] text-gray-600 truncate">{file}</span>
                                 </div>
                             </button>
                         )) : (
-                            <div className="px-4 py-3 text-[10px] opacity-30 uppercase tracking-widest">No matching files</div>
+                            <div className="px-3 py-3 text-[10px] text-gray-600 uppercase tracking-widest">No matching files</div>
                         )}
                     </div>
                 )}
 
-                <ContextPills />
+                <div className="px-3 pt-3 pb-1">
+                    <textarea
+                        value={input}
+                        onChange={handleInputChange}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSend();
+                            }
+                            if (e.key === "Escape") setShowFileSearch(false);
+                        }}
+                        placeholder="Ask anything..."
+                        rows={2}
+                        className="w-full bg-transparent text-[14px] text-gray-300 placeholder:text-gray-600 resize-none focus:outline-none min-h-[2.5rem] max-h-[8rem] leading-relaxed"
+                    />
+                </div>
 
-                <div className="mx-4 mb-3 mt-4 rounded-xl border border-[#27272a] bg-[#18181b] shadow-2xl shadow-black/50 overflow-hidden ring-1 ring-white/[0.02]">
-                    <div className="relative px-4 pt-4 pb-2">
-                        <textarea
-                            value={input}
-                            onChange={handleInputChange}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSend();
-                                }
-                                if (e.key === "Escape") setShowFileSearch(false);
-                            }}
-                            placeholder="Ask anything... Use '@' to show code, files, and docs to the AI"
-                            rows={2}
-                            className="w-full bg-transparent text-lg text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none h-[3.5rem] font-normal leading-relaxed tracking-normal"
-                        />
-                    </div>
-                    <div className="flex items-center justify-between px-3 pb-3 pt-1 select-none">
-                        <div className="flex items-center gap-1" ref={modelMenuRef}>
-                            <button
-                                onClick={() => setShowModelMenu(!showModelMenu)}
-                                className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-zinc-800/70 transition-colors group cursor-pointer"
-                                title="Select model"
-                                disabled={aiModels.length === 0}
-                            >
-                                <span className="text-sm text-zinc-300 font-medium group-hover:text-zinc-100">
-                                    {activeModelName}
-                                </span>
-                                <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-colors ${showModelMenu ? "rotate-180" : ""}`} />
-                            </button>
-                            {showModelMenu && aiModels.length > 0 && (
-                                <div className="absolute left-3 bottom-full mb-2 w-52 max-h-56 overflow-y-auto bg-[#18181b] border border-[#27272a] rounded-lg shadow-xl z-50">
-                                    {aiModels.map((model, index) => (
-                                        <button
-                                            key={`${model.id}-${index}`}
-                                            onClick={() => {
-                                                setSelectedModelId(model.id);
-                                                setShowModelMenu(false);
-                                            }}
-                                            className={`w-full text-left px-3 py-2 text-xs hover:bg-zinc-800/70 border-b border-[#27272a] last:border-b-0 ${model.id === activeModelId ? "text-[var(--color-accent-primary)]" : "text-zinc-200"}`}
-                                        >
-                                            <div className="truncate font-medium">
-                                                {model.name || model.id || "Unnamed model"}
-                                            </div>
-                                            <div className="text-[10px] opacity-50 truncate">{model.id}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                <div className="flex items-center justify-between px-3 pb-2.5 pt-0.5 select-none">
+                    <div className="flex items-center gap-2 text-gray-500 text-[10px]">
+                        <div className="p-0.5 bg-white/5 rounded border border-white/5">
+                            <CornerDownLeft className="w-3 h-3" />
                         </div>
+                        <span>to send</span>
+                    </div>
+
+                    <div className="flex items-center gap-2" ref={modelMenuRef as React.RefObject<HTMLDivElement>}>
                         <button
-                            onClick={isStreaming ? handleStop : handleSend}
-                            className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all ${isStreaming
-                                ? "bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white"
-                                : "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] hover:shadow-[0_0_20px_rgba(99,102,241,0.4)]"
-                                }`}
-                            title={isStreaming ? "Stop" : "Send"}
+                            onClick={() => setShowModelMenu(!showModelMenu)}
+                            className="text-[9px] font-bold text-gray-600 tracking-tighter uppercase hover:text-gray-400 transition-colors cursor-pointer"
+                            title="Select model"
+                            disabled={aiModels.length === 0}
                         >
-                            {isStreaming ? <StopCircle className="w-4.5 h-4.5" /> : <Send className="w-4.5 h-4.5" />}
+                            {activeModelName}
                         </button>
+                        {isStreaming ? (
+                            <button
+                                onClick={handleStop}
+                                className="flex items-center gap-1 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 text-red-400 text-[9px] hover:bg-red-500/20 transition-colors"
+                            >
+                                <StopCircle className="w-2.5 h-2.5" />
+                                <span>Stop</span>
+                            </button>
+                        ) : (
+                            <button
+                                onClick={handleSend}
+                                className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 text-gray-500 hover:text-gray-300 hover:border-white/10 transition-colors"
+                            >
+                                <span className="text-[9px]">^</span>
+                                <CornerDownLeft className="w-2.5 h-2.5" />
+                            </button>
+                        )}
+                        {showModelMenu && aiModels.length > 0 && (
+                            <div className={`absolute right-3 w-52 max-h-56 overflow-y-auto bg-[#16161e] border border-white/10 rounded-lg shadow-xl z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
+                                {aiModels.map((model, index) => (
+                                    <button
+                                        key={`${model.id}-${index}`}
+                                        onClick={() => {
+                                            setSelectedModelId(model.id);
+                                            setShowModelMenu(false);
+                                        }}
+                                        className={`w-full text-left px-3 py-2 text-xs hover:bg-white/5 border-b border-white/5 last:border-b-0 ${model.id === activeModelId ? "text-emerald-500" : "text-gray-300"}`}
+                                    >
+                                        <div className="truncate font-medium">
+                                            {model.name || model.id || "Unnamed model"}
+                                        </div>
+                                        <div className="text-[10px] text-gray-600 truncate">{model.id}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -375,13 +561,13 @@ function ContextPills() {
     if (contextPaths.length === 0) return null;
 
     return (
-        <div className="flex flex-wrap gap-2 px-4 py-2 bg-[var(--color-void-800)] border-b border-[var(--color-border-subtle)] max-h-24 overflow-y-auto">
+        <div className="flex flex-wrap gap-1.5 px-3 py-2 max-h-24 overflow-y-auto">
             {contextPaths.map(path => (
-                <div key={path} className="flex items-center gap-2 px-2 py-1 rounded bg-[var(--color-void-700)] border border-[var(--color-border-subtle)] text-[10px] text-[var(--color-text-muted)] group hover:border-[var(--color-accent-primary)] transition-all">
-                    <FileIcon className="w-3 h-3 text-[var(--color-accent-primary)] opacity-50" />
+                <div key={path} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-[10px] text-gray-400 group hover:border-emerald-500/30 transition-all">
+                    <FileIcon className="w-3 h-3 text-emerald-500/50" />
                     <span className="truncate max-w-[150px]">{path.split(/[/\\]/).pop()}</span>
-                    <button onClick={() => removeContextPath(path)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1">
-                        <X className="w-3 h-3" />
+                    <button onClick={() => removeContextPath(path)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity">
+                        <X className="w-2.5 h-2.5" />
                     </button>
                 </div>
             ))}
@@ -444,12 +630,14 @@ function ToolOperationDisplay({ operations }: { operations: ToolOperation[] }) {
             {operations.map((op, i) => (
                 <div
                     key={`${op.operation}-${op.target}-${i}`}
-                    className="flex flex-col gap-2 px-2 py-1.5 rounded bg-white/[0.02] border border-white/5 text-[10px]"
+                    className="flex flex-col gap-2 px-3 py-2 rounded-md bg-[#1a1b26] border border-white/5 ring-1 ring-white/10 text-[10px]"
                 >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2.5">
+                        <FileText className="w-[16px] h-[16px] text-[var(--color-text-muted)]" />
+                        <span className="font-mono text-[12px] text-[var(--color-text-secondary)] tracking-wide truncate flex-1">
+                            {op.target}
+                        </span>
                         {getStatusIcon(op.status)}
-                        <span className="font-medium text-[var(--color-text-secondary)] truncate">{op.operation}</span>
-                        <span className="text-[var(--color-text-muted)] truncate flex-1">{op.target.split(/[/\\]/).pop()}</span>
                     </div>
                     {op.details && op.details.trim() !== "" && (
                         <details className="text-[9px] text-[var(--color-text-muted)]">

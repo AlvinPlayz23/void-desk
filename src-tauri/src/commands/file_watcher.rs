@@ -124,4 +124,3 @@ pub async fn is_watching() -> Result<bool, String> {
     let state = get_watcher_state().lock().map_err(|e| e.to_string())?;
     Ok(state.is_some())
 }
-

@@ -61,6 +61,7 @@ interface PendingSettings {
     aiModels?: { id: string; name: string }[];
     selectedModelId?: string;
     inlineCompletionsEnabled?: boolean;
+    chatContextWindow?: number;
     // Editor
     tabSize?: number;
     wordWrap?: boolean;
@@ -106,6 +107,7 @@ export function SettingsPage() {
         if (pending.aiModels !== undefined) settings.setAIModels(pending.aiModels);
         if (pending.selectedModelId !== undefined) settings.setSelectedModelId(pending.selectedModelId);
         if (pending.inlineCompletionsEnabled !== undefined) settings.setInlineCompletionsEnabled(pending.inlineCompletionsEnabled);
+        if (pending.chatContextWindow !== undefined) settings.setChatContextWindow(pending.chatContextWindow);
         if (pending.tabSize !== undefined) settings.setTabSize(pending.tabSize);
         if (pending.wordWrap !== undefined) settings.setWordWrap(pending.wordWrap);
         if (pending.lineNumbers !== undefined) settings.setLineNumbers(pending.lineNumbers);
@@ -245,11 +247,13 @@ export function SettingsPage() {
                                 currentModels={getValue("aiModels", settings.aiModels)}
                                 currentSelectedModelId={getValue("selectedModelId", settings.selectedModelId)}
                                 currentInlineEnabled={getValue("inlineCompletionsEnabled", settings.inlineCompletionsEnabled)}
+                                currentChatContextWindow={getValue("chatContextWindow", settings.chatContextWindow)}
                                 onKeyChange={(v) => updatePending("openAIKey", v)}
                                 onBaseUrlChange={(v) => updatePending("openAIBaseUrl", v)}
                                 onModelsChange={(v) => updatePending("aiModels", v)}
                                 onSelectedModelIdChange={(v) => updatePending("selectedModelId", v)}
                                 onInlineEnabledChange={(v) => updatePending("inlineCompletionsEnabled", v)}
+                                onChatContextWindowChange={(v) => updatePending("chatContextWindow", v)}
                             />
                         )}
                         {settingsCategory === "keybindings" && (
@@ -458,11 +462,13 @@ interface AISettingsProps {
     currentModels: { id: string; name: string }[];
     currentSelectedModelId: string;
     currentInlineEnabled: boolean;
+    currentChatContextWindow: number;
     onKeyChange: (key: string) => void;
     onBaseUrlChange: (url: string) => void;
     onModelsChange: (models: { id: string; name: string }[]) => void;
     onSelectedModelIdChange: (id: string) => void;
     onInlineEnabledChange: (enabled: boolean) => void;
+    onChatContextWindowChange: (tokens: number) => void;
 }
 
 function AISettings({
@@ -471,11 +477,13 @@ function AISettings({
     currentModels,
     currentSelectedModelId,
     currentInlineEnabled,
+    currentChatContextWindow,
     onKeyChange,
     onBaseUrlChange,
     onModelsChange,
     onSelectedModelIdChange,
     onInlineEnabledChange,
+    onChatContextWindowChange,
 }: AISettingsProps) {
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -608,6 +616,24 @@ function AISettings({
 
                     <SettingRow label="Inline AI Completions" description="Show AI-powered ghost text suggestions as you type. Press Tab to accept.">
                         <Toggle checked={currentInlineEnabled} onChange={onInlineEnabledChange} />
+                    </SettingRow>
+
+                    <SettingRow
+                        label="Conversation Context Window"
+                        description="Approximate token budget for prior chat history sent with each request. Older turns naturally fall out once this limit is reached."
+                    >
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number"
+                                min={1024}
+                                max={256000}
+                                step={1024}
+                                value={currentChatContextWindow}
+                                onChange={(e) => onChatContextWindowChange(Math.max(1024, Number(e.target.value) || 1024))}
+                                className="w-36 bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
+                            />
+                            <span className="text-xs text-[var(--color-text-muted)]">tokens</span>
+                        </div>
                     </SettingRow>
 
                     {/* Test Connection Button */}

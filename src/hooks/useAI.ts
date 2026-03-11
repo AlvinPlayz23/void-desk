@@ -15,9 +15,21 @@ export interface AIResponseChunk {
     done: boolean;
 }
 
+interface ConversationHistoryMessage {
+    role: "user" | "assistant";
+    content: string;
+}
+
+const serializeConversationHistory = (messages: Message[]): ConversationHistoryMessage[] =>
+    messages
+        .filter((message): message is Message & { role: "user" | "assistant" } =>
+            (message.role === "user" || message.role === "assistant") && message.content.trim().length > 0
+        )
+        .map((message) => ({ role: message.role, content: message.content }));
+
 export function useAI() {
     const [isStreaming, setIsStreaming] = useState(false);
-    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled } = useSettingsStore();
+    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled, chatContextWindow } = useSettingsStore();
     const { rootPath } = useFileStore();
     const { refreshFileTree } = useFileSystem();
     const messages = useChatStore((state) => state.currentMessages());
@@ -30,9 +42,15 @@ export function useAI() {
     const currentMessageRef = useRef("");
     const pendingRetryRef = useRef(false);
     const activeRequestRef = useRef(0);
+    const activeRunIdRef = useRef<string | null>(null);
 
     const stopStreaming = useCallback(() => {
         abortRef.current = true;
+        if (activeRunIdRef.current) {
+            invoke<boolean>("cancel_ai_stream", { requestId: activeRunIdRef.current }).catch((err) =>
+                console.warn("Failed to cancel stream:", err)
+            );
+        }
         setIsStreaming(false);
     }, []);
 
@@ -47,8 +65,16 @@ export function useAI() {
             }
             currentMessageRef.current = text;
             pendingRetryRef.current = false;
+            const currentSessionMessages = useChatStore.getState().currentMessages();
+            const lastSessionMessage = currentSessionMessages[currentSessionMessages.length - 1];
+            const priorMessages = isRetry && lastSessionMessage?.role === "user"
+                ? currentSessionMessages.slice(0, -1)
+                : currentSessionMessages;
+            const historyMessages = serializeConversationHistory(priorMessages);
             const requestId = activeRequestRef.current + 1;
             activeRequestRef.current = requestId;
+            const runId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            activeRunIdRef.current = runId;
 
             addDebugLog({
                 timestamp: Date.now(),
@@ -57,7 +83,7 @@ export function useAI() {
             });
 
             if (!isRetry) {
-                const userMessage: Message = { role: "user", content: text, timestamp: Date.now() };
+                const userMessage: Message = { role: "user", content: text, parts: [{ type: "text", text }], timestamp: Date.now() };
                 addMessage(userMessage);
             }
 
@@ -65,6 +91,7 @@ export function useAI() {
                 role: "assistant",
                 content: "",
                 toolOperations: [],
+                parts: [],
                 timestamp: Date.now(),
             };
             addMessage(assistantMessage);
@@ -142,6 +169,7 @@ export function useAI() {
                             setTimeout(() => {
                                 if (abortRef.current || activeRequestRef.current !== requestId) return;
                                 useChatStore.getState().removeLastMessage();
+                                activeRunIdRef.current = null;
                                 sendMessage(currentMessageRef.current, true);
                             }, 1200);
                         } else if (isUnprocessableEntity) {
@@ -152,9 +180,11 @@ export function useAI() {
                             });
                             setIsStreaming(false);
                             pendingRetryRef.current = false;
+                            activeRunIdRef.current = null;
                         } else {
                             setIsStreaming(false);
                             pendingRetryRef.current = false;
+                            activeRunIdRef.current = null;
                         }
                         return;
                     }
@@ -207,6 +237,7 @@ export function useAI() {
                         setIsStreaming(false);
                         abortRef.current = false;
                         pendingRetryRef.current = false;
+                        activeRunIdRef.current = null;
 
                         addDebugLog({
                             timestamp: Date.now(),
@@ -219,12 +250,15 @@ export function useAI() {
                 // Use session-aware command if session is active
                 await invoke("ask_ai_stream_with_session", {
                     sessionId: activeSessionId || "",
+                    historyMessages,
                     message: fullMessage,
                     apiKey: openAIKey,
                     baseUrl: openAIBaseUrl,
                     modelId: activeModelId,
+                    contextWindowTokens: chatContextWindow,
                     activePath: rootPath,
                     debugRawStream: rawStreamLoggingEnabled,
+                    requestId: runId,
                     onEvent,
                 });
             } catch (error) {
@@ -239,6 +273,7 @@ export function useAI() {
                 });
                 setIsStreaming(false);
                 abortRef.current = false;
+                activeRunIdRef.current = null;
             }
         },
         [
@@ -248,6 +283,7 @@ export function useAI() {
             openAIBaseUrl,
             selectedModelId,
             aiModels,
+            chatContextWindow,
             rootPath,
             addMessage,
             appendToLastMessage,

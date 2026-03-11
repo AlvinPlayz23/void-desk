@@ -42,12 +42,31 @@ pub trait AgentTool: Send + Sync {
 #[derive(Clone, Default)]
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn AgentTool>>,
+    policy: ToolPolicy,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolPolicy {
+    pub allow_command_tool: bool,
+    pub command_allowlist: Option<Vec<String>>,
+    pub command_timeout_ms: u64,
+}
+
+impl Default for ToolPolicy {
+    fn default() -> Self {
+        Self {
+            allow_command_tool: true,
+            command_allowlist: None,
+            command_timeout_ms: 120_000,
+        }
+    }
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             tools: HashMap::new(),
+            policy: ToolPolicy::default(),
         }
     }
 
@@ -78,5 +97,18 @@ impl ToolRegistry {
 
     pub fn names(&self) -> Vec<String> {
         self.tools.keys().cloned().collect()
+    }
+
+    pub fn policy(&self) -> &ToolPolicy {
+        &self.policy
+    }
+
+    pub fn with_policy(mut self, policy: ToolPolicy) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    pub fn set_policy(&mut self, policy: ToolPolicy) {
+        self.policy = policy;
     }
 }

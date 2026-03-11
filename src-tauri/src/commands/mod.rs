@@ -6,3 +6,4 @@ pub mod file_commands;
 pub mod file_watcher;
 pub mod lsp_commands;
 pub mod project_commands;
+pub mod search_commands;

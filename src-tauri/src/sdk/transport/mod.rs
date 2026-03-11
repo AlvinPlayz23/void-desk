@@ -1,3 +1,3 @@
 pub mod http;
 
-pub use http::HttpTransport;
+pub use http::{HttpTransport, TransportConfig};

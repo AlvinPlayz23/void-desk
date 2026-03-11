@@ -26,11 +26,12 @@ pub mod session;
 pub mod client;
 
 // Re-exports for public API
-pub use agent::{Agent, AgentEvent, AgentResult};
+pub use agent::{Agent, AgentEvent, AgentResult, AgentRunHandle};
 pub use client::AIClient;
 pub use session::{Session, SessionStore};
 
 // Core type re-exports
+pub use core::errors::{ErrorCategory, SdkError};
 pub use core::events::StreamEvent;
 pub use core::types::{
     ChatRequest, ChatResponse, Choice, ImageUrl, Message, MessageContent, MessagePart,
@@ -39,7 +40,9 @@ pub use core::types::{
 };
 
 // Provider re-exports
-pub use provider::{ModelCapabilities, ModelInfo, OpenAICompatibleProvider, Provider, ProviderRegistry};
+pub use provider::{
+    ModelCapabilities, ModelInfo, OpenAICompatibleProvider, Provider, ProviderRegistry,
+};
 
 // Tools re-exports
-pub use tools::{AgentTool, AgentToolOutput, ToolRegistry};
+pub use tools::{AgentTool, AgentToolOutput, ToolPolicy, ToolRegistry};

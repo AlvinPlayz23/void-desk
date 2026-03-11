@@ -1,6 +1,6 @@
 mod commands;
-mod sdk;
 mod lsp;
+mod sdk;
 mod terminal;
 mod tracing_setup;
 
@@ -10,6 +10,7 @@ use commands::file_commands;
 use commands::file_watcher;
 use commands::lsp_commands;
 use commands::project_commands;
+use commands::search_commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -36,6 +37,7 @@ pub fn run() {
             // AI operations
             ai_commands::ask_ai_stream,
             ai_commands::ask_ai_stream_with_session,
+            ai_commands::cancel_ai_stream,
             ai_commands::test_ai_connection,
             ai_commands::reset_ai_conversation,
             ai_commands::get_inline_completion,
@@ -47,6 +49,9 @@ pub fn run() {
             ai_debug::debug_tool_call,
             ai_debug::debug_stream_response,
             ai_debug::debug_agent_flow,
+            // Search
+            search_commands::search_in_files,
+            search_commands::replace_in_files,
             // File watcher
             file_watcher::start_file_watcher,
             file_watcher::stop_file_watcher,

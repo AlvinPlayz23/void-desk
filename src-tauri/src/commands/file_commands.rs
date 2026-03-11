@@ -51,7 +51,7 @@ pub struct BatchOperationResult {
 #[tauri::command]
 pub async fn batch_delete_files(paths: Vec<String>) -> Result<Vec<BatchOperationResult>, String> {
     let mut results = Vec::new();
-    
+
     for path in paths {
         let path_obj = Path::new(&path);
         let result = if path_obj.is_dir() {
@@ -59,14 +59,14 @@ pub async fn batch_delete_files(paths: Vec<String>) -> Result<Vec<BatchOperation
         } else {
             fs::remove_file(path_obj)
         };
-        
+
         results.push(BatchOperationResult {
             path: path.clone(),
             success: result.is_ok(),
             error: result.err().map(|e| e.to_string()),
         });
     }
-    
+
     Ok(results)
 }
 
@@ -81,17 +81,17 @@ pub async fn batch_move_files(
     operations: Vec<BatchMoveOperation>,
 ) -> Result<Vec<BatchOperationResult>, String> {
     let mut results = Vec::new();
-    
+
     for op in operations {
         let result = fs::rename(&op.from, &op.to);
-        
+
         results.push(BatchOperationResult {
             path: op.from,
             success: result.is_ok(),
             error: result.err().map(|e| e.to_string()),
         });
     }
-    
+
     Ok(results)
 }
 

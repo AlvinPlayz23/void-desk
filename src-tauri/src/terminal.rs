@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, State, Emitter};
+use tauri::{AppHandle, Emitter, State};
 
 #[derive(Serialize, Deserialize)]
 pub struct PtyInfo {
@@ -81,11 +81,7 @@ pub async fn create_pty(
     let master = Arc::new(Mutex::new(pair.master));
 
     // Store PTY
-    state
-        .ptys
-        .lock()
-        .unwrap()
-        .insert(pid, Arc::clone(&master));
+    state.ptys.lock().unwrap().insert(pid, Arc::clone(&master));
 
     // Spawn reader thread
     let app_clone = app.clone();

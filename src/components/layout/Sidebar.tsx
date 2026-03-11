@@ -2,6 +2,8 @@ import { useState } from "react";
 import { FileTree } from "@/components/file-tree/FileTree";
 import { useFileStore, FileNode } from "@/stores/fileStore";
 import { useFileSystem } from "@/hooks/useFileSystem";
+import { useUIStore } from "@/stores/uiStore";
+import { SearchPanel } from "@/components/search/SearchPanel";
 import {
     FolderOpen,
     FolderPlus,
@@ -24,6 +26,7 @@ export function Sidebar() {
         batchMoveFiles,
         openFolderAt,
     } = useFileSystem();
+    const { sidebarView, setSidebarView } = useUIStore();
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [isRootDragOver, setIsRootDragOver] = useState(false);
@@ -165,35 +168,34 @@ export function Sidebar() {
 
     return (
         <div className="flex flex-col h-full">
-            {/* Header */}
+            {/* Header with view switcher */}
             <div className="panel-header">
-                <span className="flex items-center gap-2">
-                    <FolderOpen className="w-3.5 h-3.5" />
-                    Explorer
-                </span>
                 <div className="flex items-center gap-1">
-                    {hasProject && (
+                    <button
+                        onClick={() => setSidebarView("explorer")}
+                        className={`icon-btn ${sidebarView === "explorer" ? "text-[var(--color-text-primary)] bg-[var(--color-void-700)]" : ""}`}
+                        title="Explorer"
+                    >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={() => setSidebarView("search")}
+                        className={`icon-btn ${sidebarView === "search" ? "text-[var(--color-text-primary)] bg-[var(--color-void-700)]" : ""}`}
+                        title="Search (Ctrl+Shift+F)"
+                    >
+                        <Search className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+                <div className="flex items-center gap-1">
+                    {sidebarView === "explorer" && hasProject && (
                         <>
-                            <button
-                                onClick={handleNewFile}
-                                className="icon-btn"
-                                title="New File"
-                            >
+                            <button onClick={handleNewFile} className="icon-btn" title="New File">
                                 <FilePlus className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                                onClick={handleNewFolder}
-                                className="icon-btn"
-                                title="New Folder"
-                            >
+                            <button onClick={handleNewFolder} className="icon-btn" title="New Folder">
                                 <FolderPlus className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                                onClick={handleRefresh}
-                                className="icon-btn"
-                                title="Refresh"
-                                disabled={isLoading}
-                            >
+                            <button onClick={handleRefresh} className="icon-btn" title="Refresh" disabled={isLoading}>
                                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
                             </button>
                         </>
@@ -201,106 +203,112 @@ export function Sidebar() {
                 </div>
             </div>
 
-            {/* Search - only show when project is open */}
-            {hasProject && (
-                <div className="p-2">
-                    <div className="flex items-center gap-2 px-2 py-1.5 bg-[var(--color-void-800)] rounded-md border border-[var(--color-border-subtle)] focus-within:border-[var(--color-accent-primary)]">
-                        <Search className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search files..."
-                            className="flex-1 bg-transparent text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none"
-                        />
-                    </div>
-                </div>
-            )}
-
-            {/* File Tree or Empty State - empty space acts as root drop zone */}
-            <div 
-                className={`flex-1 overflow-auto px-2 pb-2 ${isRootDragOver ? "bg-[rgb(99_102_241_/_0.05)]" : ""}`}
-                onDragOver={handleRootDragOver}
-                onDragLeave={handleRootDragLeave}
-                onDrop={handleRootDrop}
-            >
-                {hasProject ? (
-                    <FileTree nodes={filteredTree} depth={0} rootPath={rootPath} />
-                ) : (
-                    <div className="flex flex-col h-full px-4 pt-6">
-                        <div className="flex flex-col items-center text-center mb-6">
-                            <FolderOpen className="w-10 h-10 opacity-20 text-[var(--color-text-tertiary)] mb-3" />
-                            <p className="text-sm text-[var(--color-text-tertiary)] mb-2">
-                                No folder open
-                            </p>
-                            <button
-                                onClick={handleOpenFolder}
-                                className="px-3 py-1.5 text-xs bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] rounded-md hover:opacity-90 transition-opacity"
-                            >
-                                Open Folder
-                            </button>
-                            <p className="text-xs text-[var(--color-text-muted)] mt-2">
-                                or press Ctrl+O
-                            </p>
+            {sidebarView === "explorer" ? (
+                <>
+                    {/* Search - only show when project is open */}
+                    {hasProject && (
+                        <div className="p-2">
+                            <div className="flex items-center gap-2 px-2 py-1.5 bg-[var(--color-void-800)] rounded-md border border-[var(--color-border-subtle)] focus-within:border-[var(--color-accent-primary)]">
+                                <Search className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search files..."
+                                    className="flex-1 bg-transparent text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none"
+                                />
+                            </div>
                         </div>
+                    )}
 
-                        {recentProjects.length > 0 && (
-                            <div className="mt-2">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
-                                        <Clock className="w-3 h-3" />
-                                        Recent
-                                    </div>
+                    {/* File Tree or Empty State - empty space acts as root drop zone */}
+                    <div 
+                        className={`flex-1 overflow-auto px-2 pb-2 ${isRootDragOver ? "bg-[rgb(99_102_241_/_0.05)]" : ""}`}
+                        onDragOver={handleRootDragOver}
+                        onDragLeave={handleRootDragLeave}
+                        onDrop={handleRootDrop}
+                    >
+                        {hasProject ? (
+                            <FileTree nodes={filteredTree} depth={0} rootPath={rootPath} />
+                        ) : (
+                            <div className="flex flex-col h-full px-4 pt-6">
+                                <div className="flex flex-col items-center text-center mb-6">
+                                    <FolderOpen className="w-10 h-10 opacity-20 text-[var(--color-text-tertiary)] mb-3" />
+                                    <p className="text-sm text-[var(--color-text-tertiary)] mb-2">
+                                        No folder open
+                                    </p>
                                     <button
-                                        onClick={clearRecentProjects}
-                                        className="icon-btn w-5 h-5"
-                                        title="Clear Recent Projects"
+                                        onClick={handleOpenFolder}
+                                        className="px-3 py-1.5 text-xs bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] rounded-md hover:opacity-90 transition-opacity"
                                     >
-                                        <Trash2 className="w-3 h-3" />
+                                        Open Folder
                                     </button>
+                                    <p className="text-xs text-[var(--color-text-muted)] mt-2">
+                                        or press Ctrl+O
+                                    </p>
                                 </div>
-                                <div className="flex flex-col gap-0.5">
-                                    {recentProjects.map((project) => (
-                                        <button
-                                            key={project.path}
-                                            onClick={() => handleOpenRecentProject(project.path)}
-                                            className="group flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-[var(--color-void-700)] transition-colors"
-                                        >
-                                            <FolderOpen className="w-3.5 h-3.5 text-[var(--color-text-muted)] flex-shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-xs text-[var(--color-text-secondary)] truncate">{project.name}</p>
-                                                <p className="text-[10px] text-[var(--color-text-muted)] truncate">{project.path}</p>
+
+                                {recentProjects.length > 0 && (
+                                    <div className="mt-2">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                <Clock className="w-3 h-3" />
+                                                Recent
                                             </div>
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); removeRecentProject(project.path); }}
-                                                className="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity"
-                                                title="Remove"
+                                                onClick={clearRecentProjects}
+                                                className="icon-btn w-5 h-5"
+                                                title="Clear Recent Projects"
                                             >
                                                 <Trash2 className="w-3 h-3" />
                                             </button>
-                                        </button>
-                                    ))}
-                                </div>
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                            {recentProjects.map((project) => (
+                                                <button
+                                                    key={project.path}
+                                                    onClick={() => handleOpenRecentProject(project.path)}
+                                                    className="group flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-[var(--color-void-700)] transition-colors"
+                                                >
+                                                    <FolderOpen className="w-3.5 h-3.5 text-[var(--color-text-muted)] flex-shrink-0" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-xs text-[var(--color-text-secondary)] truncate">{project.name}</p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] truncate">{project.path}</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); removeRecentProject(project.path); }}
+                                                        className="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity"
+                                                        title="Remove"
+                                                    >
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
-                )}
-            </div>
 
-            {/* Footer - only show when project is open */}
-            {hasProject && (
-                <div className="flex items-center justify-between p-2 border-t border-[var(--color-border-subtle)] shrink-0">
-                    <span className="text-xs text-[var(--color-text-muted)] truncate max-w-[80%]" title={rootPath}>
-                        {rootPath.split(/[/\\]/).pop()}
-                    </span>
-                    <button
-                        onClick={handleOpenFolder}
-                        className="icon-btn"
-                        title="Open Different Folder"
-                    >
-                        <Settings className="w-4 h-4" />
-                    </button>
-                </div>
+                    {/* Footer - only show when project is open */}
+                    {hasProject && (
+                        <div className="flex items-center justify-between p-2 border-t border-[var(--color-border-subtle)] shrink-0">
+                            <span className="text-xs text-[var(--color-text-muted)] truncate max-w-[80%]" title={rootPath}>
+                                {rootPath.split(/[/\\]/).pop()}
+                            </span>
+                            <button
+                                onClick={handleOpenFolder}
+                                className="icon-btn"
+                                title="Open Different Folder"
+                            >
+                                <Settings className="w-4 h-4" />
+                            </button>
+                        </div>
+                    )}
+                </>
+            ) : (
+                <SearchPanel />
             )}
         </div>
     );

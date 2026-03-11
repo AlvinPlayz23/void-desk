@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Error, Result};
 use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
 use std::collections::HashMap;
 
-use crate::sdk::core::{ResponseStreamResult, StreamEvent, ToolCall, ToolCallChunk};
+use crate::sdk::core::{ResponseStreamResult, SdkError, StreamEvent, ToolCall, ToolCallChunk};
 
 #[derive(Default, Clone)]
 struct ToolCallAccumulator {
@@ -66,12 +66,22 @@ pub fn parse_sse_stream_with_debug(
                         }
 
                         let result: Result<ResponseStreamResult> = serde_json::from_str(data)
-                            .map_err(|e| anyhow!("Failed to parse SSE json: {}", e));
+                            .map_err(|e| {
+                                Error::new(SdkError::stream(format!(
+                                    "Failed to parse SSE json: {}",
+                                    e
+                                )))
+                            });
 
                         let result = match result {
                             Ok(val) => val,
                             Err(err) => {
-                                events.push(Err(err));
+                                if debug_raw {
+                                    events.push(Ok(StreamEvent::Raw(format!(
+                                        "Malformed SSE payload dropped: {}",
+                                        err
+                                    ))));
+                                }
                                 continue;
                             }
                         };
@@ -81,7 +91,11 @@ pub fn parse_sse_stream_with_debug(
                                 .message
                                 .clone()
                                 .unwrap_or_else(|| "Unknown stream error".to_string());
-                            events.push(Err(anyhow!("Stream error: {}", message)));
+                            events.push(Err(Error::new(
+                                SdkError::stream(format!("Stream error: {}", message)).with_code(
+                                    error.code.unwrap_or_else(|| "provider_stream".to_string()),
+                                ),
+                            )));
                             continue;
                         }
 
@@ -99,12 +113,12 @@ pub fn parse_sse_stream_with_debug(
                                 }
                                 if let Some(reasoning) = delta.reasoning {
                                     if !reasoning.is_empty() {
-                                        events.push(Ok(StreamEvent::TextDelta(reasoning)));
+                                        events.push(Ok(StreamEvent::ReasoningDelta(reasoning)));
                                     }
                                 }
                                 if let Some(reasoning) = delta.reasoning_content {
                                     if !reasoning.is_empty() {
-                                        events.push(Ok(StreamEvent::TextDelta(reasoning)));
+                                        events.push(Ok(StreamEvent::ReasoningDelta(reasoning)));
                                     }
                                 }
                                 if let Some(tool_calls) = delta.tool_calls {
@@ -128,11 +142,18 @@ pub fn parse_sse_stream_with_debug(
                                 saw_finish = true;
                             }
                         }
+
+                        if let Some(usage) = result.usage {
+                            events.push(Ok(StreamEvent::UsageDelta(usage)));
+                        }
                     }
                 }
             }
             Err(err) => {
-                events.push(Err(anyhow!("Stream error: {}", err)));
+                events.push(Err(Error::new(SdkError::stream(format!(
+                    "Stream error: {}",
+                    err
+                )))));
             }
         }
 
@@ -146,11 +167,12 @@ fn accumulate_tool_call_chunks(
 ) {
     for tool_call in tool_calls {
         let index = tool_call.index.unwrap_or_default();
-        let id = tool_call.id.clone().unwrap_or_default();
+        let id = tool_call.id.clone().unwrap_or_default().trim().to_string();
         let name = tool_call
             .function
             .as_ref()
             .and_then(|f| f.name.clone())
+            .map(|n| n.trim().to_string())
             .unwrap_or_default();
         let arguments = tool_call
             .function
@@ -164,11 +186,13 @@ fn accumulate_tool_call_chunks(
             format!("index:{}", index)
         };
 
-        let entry = accumulators.entry(key.clone()).or_insert_with(|| ToolCallAccumulator {
-            id: id.clone(),
-            name: name.clone(),
-            arguments: String::new(),
-        });
+        let entry = accumulators
+            .entry(key.clone())
+            .or_insert_with(|| ToolCallAccumulator {
+                id: id.clone(),
+                name: name.clone(),
+                arguments: String::new(),
+            });
 
         if !id.is_empty() {
             entry.id = id;
@@ -196,11 +220,13 @@ fn accumulate_tool_call_messages(
             format!("name:{}", name)
         };
 
-        let entry = accumulators.entry(key.clone()).or_insert_with(|| ToolCallAccumulator {
-            id: id.clone(),
-            name: name.clone(),
-            arguments: String::new(),
-        });
+        let entry = accumulators
+            .entry(key.clone())
+            .or_insert_with(|| ToolCallAccumulator {
+                id: id.clone(),
+                name: name.clone(),
+                arguments: String::new(),
+            });
 
         if !id.is_empty() {
             entry.id = id;

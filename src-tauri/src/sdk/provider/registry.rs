@@ -16,8 +16,7 @@ impl ProviderRegistry {
     }
 
     pub fn register(&mut self, provider: Arc<dyn Provider>) {
-        self.providers
-            .insert(provider.id().to_string(), provider);
+        self.providers.insert(provider.id().to_string(), provider);
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<dyn Provider>> {

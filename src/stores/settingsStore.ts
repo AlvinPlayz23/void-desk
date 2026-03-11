@@ -35,6 +35,7 @@ interface SettingsState {
     selectedModelId: string;
     inlineCompletionsEnabled: boolean;
     rawStreamLoggingEnabled: boolean;
+    chatContextWindow: number;
 
     // Appearance Settings
     editorFontSize: number;
@@ -60,6 +61,7 @@ interface SettingsState {
     setSelectedModelId: (id: string) => void;
     setInlineCompletionsEnabled: (enabled: boolean) => void;
     setRawStreamLoggingEnabled: (enabled: boolean) => void;
+    setChatContextWindow: (tokens: number) => void;
 
     // Actions - Appearance
     setEditorFontSize: (size: number) => void;
@@ -100,6 +102,7 @@ export const useSettingsStore = create<SettingsState>()(
             selectedModelId: "gpt-4o",
             inlineCompletionsEnabled: true,
             rawStreamLoggingEnabled: false,
+            chatContextWindow: 32000,
 
             // Appearance Settings
             editorFontSize: 14,
@@ -137,6 +140,7 @@ export const useSettingsStore = create<SettingsState>()(
             setSelectedModelId: (id) => set({ selectedModelId: id }),
             setInlineCompletionsEnabled: (enabled) => set({ inlineCompletionsEnabled: enabled }),
             setRawStreamLoggingEnabled: (enabled) => set({ rawStreamLoggingEnabled: enabled }),
+            setChatContextWindow: (tokens) => set({ chatContextWindow: Math.max(1024, Math.min(256000, Math.round(tokens || 1024))) }),
 
             // Actions - Appearance
             setEditorFontSize: (size) => set({ editorFontSize: Math.max(10, Math.min(32, size)) }),
@@ -179,6 +183,7 @@ export const useSettingsStore = create<SettingsState>()(
                 selectedModelId: "gpt-4o",
                 inlineCompletionsEnabled: true,
                 rawStreamLoggingEnabled: false,
+                chatContextWindow: 32000,
                 editorFontSize: 14,
                 editorFontFamily: "JetBrains Mono",
                 uiScale: 100,

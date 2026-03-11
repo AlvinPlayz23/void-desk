@@ -324,7 +324,11 @@ fn extract_delta_text(value: Value) -> Option<String> {
                     _ => {}
                 }
             }
-            if out.is_empty() { None } else { Some(out) }
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
         }
         Value::Object(map) => {
             if let Some(text) = map.get("text").and_then(|v| v.as_str()) {

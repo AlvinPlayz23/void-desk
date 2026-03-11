@@ -1,12 +1,12 @@
 // LSP Transport Layer
 // Handles JSON-RPC message framing over stdin/stdout with proper request/response routing
 
+use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{ChildStdin, ChildStdout, Stdio};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex};
-use serde_json::Value;
 
 /// Sender for stdin writes (thread-safe)
 pub struct StdinWriter {
@@ -25,8 +25,12 @@ impl StdinWriter {
         let header = format!("Content-Length: {}\r\n\r\n", content.len());
 
         let mut stdin = self.stdin.lock().map_err(|e| e.to_string())?;
-        stdin.write_all(header.as_bytes()).map_err(|e| e.to_string())?;
-        stdin.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+        stdin
+            .write_all(header.as_bytes())
+            .map_err(|e| e.to_string())?;
+        stdin
+            .write_all(content.as_bytes())
+            .map_err(|e| e.to_string())?;
         stdin.flush().map_err(|e| e.to_string())?;
 
         Ok(())
@@ -54,7 +58,10 @@ impl StdinWriter {
 
 impl LspTransport {
     /// Spawns a new language server process and sets up communication
-    pub async fn spawn(command: &str, args: &[&str]) -> Result<(Self, tokio::task::JoinHandle<()>), String> {
+    pub async fn spawn(
+        command: &str,
+        args: &[&str],
+    ) -> Result<(Self, tokio::task::JoinHandle<()>), String> {
         let mut cmd = if cfg!(windows) && !command.ends_with(".exe") {
             let mut c = std::process::Command::new("cmd");
             c.arg("/C").arg(command);
@@ -75,7 +82,7 @@ impl LspTransport {
         let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
 
         let writer = Arc::new(StdinWriter::new(stdin));
-        let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>> = 
+        let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
         // Clone for the background reader
@@ -100,9 +107,9 @@ impl LspTransport {
 
     /// Background reader that routes responses to waiting requests
     fn read_loop(
-        mut reader: BufReader<ChildStdout>, 
+        mut reader: BufReader<ChildStdout>,
         pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
-        writer: Arc<StdinWriter>
+        writer: Arc<StdinWriter>,
     ) {
         loop {
             // Read Content-Length header
@@ -150,11 +157,12 @@ impl LspTransport {
                         let sender = {
                             let rt = tokio::runtime::Handle::try_current();
                             if let Ok(handle) = rt {
-                                handle.block_on(async {
-                                    pending.lock().await.remove(&id)
-                                })
+                                handle.block_on(async { pending.lock().await.remove(&id) })
                             } else {
-                                eprintln!("[LSP Transport] No tokio runtime for routing response id: {}", id);
+                                eprintln!(
+                                    "[LSP Transport] No tokio runtime for routing response id: {}",
+                                    id
+                                );
                                 None
                             }
                         };
@@ -170,17 +178,22 @@ impl LspTransport {
                     // Request from server - we need to respond!
                     let method = json.get("method").and_then(|v| v.as_str()).unwrap_or("");
                     let id = json.get("id").cloned().unwrap_or(Value::Null);
-                    
+
                     eprintln!("[LSP Transport] Server request: {} (id: {})", method, id);
-                    
+
                     // Handle common server requests
                     let response_result = match method {
                         "workspace/configuration" => {
                             // Return empty configuration for each requested item
                             // The server sends an array of items it wants config for
-                            if let Some(items) = json.get("params").and_then(|p| p.get("items")).and_then(|i| i.as_array()) {
+                            if let Some(items) = json
+                                .get("params")
+                                .and_then(|p| p.get("items"))
+                                .and_then(|i| i.as_array())
+                            {
                                 // Return an empty object for each config item requested
-                                let configs: Vec<Value> = items.iter().map(|_| serde_json::json!({})).collect();
+                                let configs: Vec<Value> =
+                                    items.iter().map(|_| serde_json::json!({})).collect();
                                 serde_json::json!(configs)
                             } else {
                                 serde_json::json!([{}])
@@ -199,7 +212,7 @@ impl LspTransport {
                             serde_json::json!(null)
                         }
                     };
-                    
+
                     // Send response
                     if let Err(e) = writer.send_response(id, response_result) {
                         eprintln!("[LSP Transport] Failed to send response: {}", e);
@@ -240,7 +253,10 @@ impl LspTransport {
             "params": params
         });
 
-        eprintln!("[LSP Transport] Sending request id: {}, method: {}", id, method);
+        eprintln!(
+            "[LSP Transport] Sending request id: {}, method: {}",
+            id, method
+        );
         self.writer.write_message(&request)?;
 
         // Wait for response with timeout

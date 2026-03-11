@@ -52,6 +52,17 @@ export function useKeyboard() {
                 }
             },
         },
+        // Global Search (Ctrl+Shift+F)
+        {
+            id: "globalSearch",
+            key: "f",
+            ctrl: true,
+            shift: true,
+            action: () => {
+                useUIStore.getState().openSidebar();
+                useUIStore.getState().setSidebarView("search");
+            },
+        },
         // Command Palette (Ctrl+Shift+P)
         {
             id: "commandPalette",

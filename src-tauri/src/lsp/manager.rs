@@ -1,14 +1,14 @@
 // LSP Manager
 // Manages the lifecycle of language server processes
 
-use crate::lsp::transport::LspTransport;
 use crate::lsp::protocol;
+use crate::lsp::transport::LspTransport;
+use lsp_types::Url;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde_json::Value;
-use lsp_types::Url;
 
 /// Per-language server state
 pub struct LanguageServer {
@@ -40,9 +40,7 @@ impl LspManager {
     /// Get server command for a language
     fn get_server_command(language: &str) -> Option<(&'static str, Vec<&'static str>)> {
         match language {
-            "typescript" | "javascript" => {
-                Some(("typescript-language-server", vec!["--stdio"]))
-            }
+            "typescript" | "javascript" => Some(("typescript-language-server", vec!["--stdio"])),
             "rust" => Some(("rust-analyzer", vec![])),
             "python" => Some(("pyright-langserver", vec!["--stdio"])),
             _ => None,
@@ -84,15 +82,18 @@ impl LspManager {
     }
 
     /// Send initialize request to the server
-    async fn initialize_server(&self, server: &Arc<LanguageServer>, _language: &str) -> Result<(), String> {
+    async fn initialize_server(
+        &self,
+        server: &Arc<LanguageServer>,
+        _language: &str,
+    ) -> Result<(), String> {
         let root_path_guard = self.root_path.read().await;
-        let root_path_str = root_path_guard.as_ref()
-            .ok_or("No root path set")?;
+        let root_path_str = root_path_guard.as_ref().ok_or("No root path set")?;
 
         // Properly convert Windows path to file:/// URI using lsp_types::Url
         let root_url = Url::from_directory_path(Path::new(root_path_str))
             .map_err(|_| format!("Invalid root path: {}", root_path_str))?;
-        
+
         let workspace_name = Path::new(root_path_str)
             .file_name()
             .and_then(|n| n.to_str())
@@ -139,36 +140,62 @@ impl LspManager {
         });
 
         // Send initialize request and wait for response
-        let _result = server.transport.send_request("initialize", init_params).await?;
-        
+        let _result = server
+            .transport
+            .send_request("initialize", init_params)
+            .await?;
+
         // Send initialized notification
-        server.transport.send_notification("initialized", serde_json::json!({}))?;
-        
+        server
+            .transport
+            .send_notification("initialized", serde_json::json!({}))?;
+
         eprintln!("[LSP Manager] Server initialized successfully");
         Ok(())
     }
 
     /// Request completions at a position
-    pub async fn completion(&self, language: &str, path: &str, line: u32, character: u32) -> Result<Value, String> {
+    pub async fn completion(
+        &self,
+        language: &str,
+        path: &str,
+        line: u32,
+        character: u32,
+    ) -> Result<Value, String> {
         let server = self.ensure_server(language).await?;
         let params = protocol::create_completion_params(path, line, character)?;
 
-        eprintln!("[LSP Manager] Requesting completion at {}:{}:{}", path, line, character);
-        server.transport.send_request("textDocument/completion", params).await
+        eprintln!(
+            "[LSP Manager] Requesting completion at {}:{}:{}",
+            path, line, character
+        );
+        server
+            .transport
+            .send_request("textDocument/completion", params)
+            .await
     }
 
     /// Request hover info at a position
-    pub async fn hover(&self, language: &str, path: &str, line: u32, character: u32) -> Result<Value, String> {
+    pub async fn hover(
+        &self,
+        language: &str,
+        path: &str,
+        line: u32,
+        character: u32,
+    ) -> Result<Value, String> {
         let server = self.ensure_server(language).await?;
         let params = protocol::create_hover_params(path, line, character)?;
 
-        server.transport.send_request("textDocument/hover", params).await
+        server
+            .transport
+            .send_request("textDocument/hover", params)
+            .await
     }
 
     /// Notify server that a document was opened
     pub async fn did_open(&self, language: &str, path: &str, content: &str) -> Result<(), String> {
         let server = self.ensure_server(language).await?;
-        
+
         // Reset version for new open
         {
             let mut versions = self.doc_versions.write().await;
@@ -177,13 +204,20 @@ impl LspManager {
 
         let params = protocol::create_did_open_params(path, content, 1)?;
 
-        server.transport.send_notification("textDocument/didOpen", params)
+        server
+            .transport
+            .send_notification("textDocument/didOpen", params)
     }
 
     /// Notify server that a document changed
-    pub async fn did_change(&self, language: &str, path: &str, content: &str) -> Result<(), String> {
+    pub async fn did_change(
+        &self,
+        language: &str,
+        path: &str,
+        content: &str,
+    ) -> Result<(), String> {
         let server = self.ensure_server(language).await?;
-        
+
         let version = {
             let mut versions = self.doc_versions.write().await;
             let v = versions.entry(path.to_string()).or_insert(0);
@@ -193,7 +227,9 @@ impl LspManager {
 
         let params = protocol::create_did_change_params(path, content, version)?;
 
-        server.transport.send_notification("textDocument/didChange", params)
+        server
+            .transport
+            .send_notification("textDocument/didChange", params)
     }
 }
 
