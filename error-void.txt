@@ -1,0 +1,530 @@
+pnpm run tauri dev
+
+> voidesk@0.1.0 tauri C:\Users\bijim\void-desk
+> tauri "dev"
+
+     Running BeforeDevCommand (`npm run dev`)
+npm warn Unknown env config "msvs-version". This will stop working in the next major version of npm.
+npm warn Unknown env config "npm-globalconfig". This will stop working in the next major version of npm.
+npm warn Unknown env config "verify-deps-before-run". This will stop working in the next major version of npm.
+npm warn Unknown env config "_jsr-registry". This will stop working in the next major version of npm.
+npm warn Unknown user config "msvs_version". This will stop working in the next major version of npm.
+
+> voidesk@0.1.0 dev
+> vite
+
+       Error Found version mismatched Tauri packages. Make sure the NPM package and Rust crate versions are on the same major/minor releases:
+tauri (v2.9.5) : @tauri-apps/api (v2.10.1)
+tauri-plugin-dialog (v2.5.0) : @tauri-apps/plugin-dialog (v2.6.0)
+
+  VITE v6.4.1  ready in 1444 ms
+
+  ➜  Local:   http://localhost:1420/
+  ➜  Network: use --host to expose
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching C:\Users\bijim\void-desk\src-tauri for changes...
+Error: The following dependencies are imported but could not be resolved:
+
+  @codemirror/autocomplete (imported by C:/Users/bijim/void-desk/src/components/editor/CodeEditor.tsx)
+
+Are they installed?
+    at file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:14849:15
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:47014:28
+   Compiling voidesk v0.1.0 (C:\Users\bijim\void-desk\src-tauri)
+warning: unused imports: `CompletionResponse`, `DidCloseTextDocumentParams`, `DidSaveTextDocumentParams`, `Hover`, `InitializeParams`, `InitializeResult`, `InitializedParams`, and `PublishDiagnosticsParams`
+ --> src\lsp\protocol.rs:5:23
+  |
+5 |     CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+  |                       ^^^^^^^^^^^^^^^^^^                               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+6 |     DidOpenTextDocumentParams, DidSaveTextDocumentParams, Hover, HoverParams, InitializeParams,
+  |                                ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^               ^^^^^^^^^^^^^^^^
+7 |     InitializeResult, InitializedParams, Position, PublishDiagnosticsParams,
+  |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^            ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Deserialize` and `Serialize`      
+  --> src\lsp\protocol.rs:11:13
+   |
+11 | use serde::{Deserialize, Serialize};
+   |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `mpsc`
+ --> src\lsp\transport.rs:9:19
+  |
+9 | use tokio::sync::{mpsc, oneshot, Mutex};
+  |                   ^^^^
+
+warning: unused import: `is_retryable_status`               
+ --> src\sdk\core\mod.rs:5:18
+  |
+5 | pub use errors::{is_retryable_status, ErrorCategory, SdkError};
+  |                  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `parse_sse_stream`                  
+ --> src\sdk\stream\mod.rs:3:17
+  |
+3 | pub use parse::{parse_sse_stream, parse_sse_stream_with_debug};
+  |                 ^^^^^^^^^^^^^^^^
+
+warning: unused import: `TransportConfig`                   
+ --> src\sdk\transport\mod.rs:3:31
+  |
+3 | pub use http::{HttpTransport, TransportConfig};
+  |                               ^^^^^^^^^^^^^^^
+
+warning: unused import: `AgentResult`                       
+  --> src\sdk\mod.rs:29:36
+   |
+29 | pub use agent::{Agent, AgentEvent, AgentResult, AgentRunHandle};
+   |                                    ^^^^^^^^^^^
+
+warning: unused import: `Session`                           
+  --> src\sdk\mod.rs:31:19
+   |
+31 | pub use session::{Session, SessionStore};
+   |                   ^^^^^^^
+
+warning: unused import: `core::events::StreamEvent`
+  --> src\sdk\mod.rs:35:9
+   |
+35 | pub use core::events::StreamEvent;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatRequest`, `ChatResponse`, `Choice`, `ImageUrl`, `MessageContent`, `MessagePart`, `ResponseMessageDelta`, `ResponseStreamError`, `ResponseStreamResult`, `ToolCallFunction`, `ToolCall`, `ToolChoice`, `ToolFunction`, `Tool`, and `Usage`
+  --> src\sdk\mod.rs:37:5
+   |
+37 |     ChatRequest, ChatResponse, Choice, ImageUrl, Message, MessageContent, MessagePart,
+   |     ^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^  ^^^^^^^^           ^^^^^^^^^^^^^^  ^^^^^^^^^^^
+38 |     ResponseMessageDelta, ResponseStreamError, ResponseStreamResult, Tool, ToolCall,
+   |     ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^  ^^^^^^^^
+39 |     ToolCallFunction, ToolChoice, ToolFunction, ToolSchemaFormat, Usage,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^                    ^^^^^
+
+warning: unused imports: `ModelCapabilities`, `ModelInfo`, `OpenAICompatibleProvider`, `ProviderRegistry`, and `Provider`
+  --> src\sdk\mod.rs:44:5
+   |
+44 |     ModelCapabilities, ModelInfo, OpenAICompatibleProvider, Provider, ProviderRegistry,
+   |     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ToolRegistry`                      
+  --> src\sdk\mod.rs:48:57
+   |
+48 | pub use tools::{AgentTool, AgentToolOutput, ToolPolicy, ToolRegistry};
+   |                                                         ^^^^^^^^^^^^
+
+warning: value assigned to `diff` is never read             
+   --> src\commands\ai_tools.rs:801:20
+    |
+801 |     let mut diff = String::new();
+    |                    ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `DebugRequest` is never constructed         
+  --> src\commands\ai_debug.rs:11:8
+   |
+11 | struct DebugRequest {
+   |        ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `DebugResponse` is never constructed
+  --> src\commands\ai_debug.rs:20:8
+   |
+20 | struct DebugResponse {
+   |        ^^^^^^^^^^^^^
+
+warning: struct `CompletionItem` is never constructed       
+  --> src\commands\lsp_commands.rs:22:12
+   |
+22 | pub struct CompletionItem {
+   |            ^^^^^^^^^^^^^^
+
+warning: variants `Tool` and `Internal` are never constructed
+  --> src\sdk\core\errors.rs:10:5
+   |
+ 6 | pub enum ErrorCategory {
+   |          ------------- variants in this enum
+...
+10 |     Tool,
+   |     ^^^^
+...
+13 |     Internal,
+   |     ^^^^^^^^
+   |
+   = note: `ErrorCategory` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated functions `tool` and `internal` are never used
+  --> src\sdk\core\errors.rs:63:12
+   |
+25 | impl SdkError {
+   | ------------- associated functions in this implementation
+...
+63 |     pub fn tool(message: impl Into<String>) -> Self {
+   |            ^^^^
+...
+75 |     pub fn internal(message: impl Into<String>) -> Self {
+   |            ^^^^^^^^
+
+warning: enum `ToolSchemaFormat` is never used              
+   --> src\sdk\core\types.rs:216:10
+    |
+216 | pub enum ToolSchemaFormat {
+    |          ^^^^^^^^^^^^^^^^
+
+warning: fields `id` and `usage` are never read             
+   --> src\sdk\core\types.rs:223:9
+    |
+222 | pub struct ChatResponse {
+    |            ------------ fields in this struct
+223 |     pub id: String,
+    |         ^^
+...
+226 |     pub usage: Option<Usage>,
+    |         ^^^^^
+    |
+    = note: `ChatResponse` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `index` and `finish_reason` are never read  
+   --> src\sdk\core\types.rs:231:9
+    |
+230 | pub struct Choice {
+    |            ------ fields in this struct
+231 |     pub index: usize,
+    |         ^^^^^
+...
+234 |     pub finish_reason: Option<String>,
+    |         ^^^^^^^^^^^^^
+    |
+    = note: `Choice` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `type` is never read                         
+   --> src\sdk\core\types.rs:248:9
+    |
+245 | pub struct ResponseStreamError {
+    |            ------------------- field in this struct
+...
+248 |     pub r#type: Option<String>,
+    |         ^^^^^^
+    |
+    = note: `ResponseStreamError` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `id` is never read                           
+   --> src\sdk\core\types.rs:256:9
+    |
+254 | pub struct ResponseStreamResult {
+    |            -------------------- field in this struct
+255 |     #[serde(default)]
+256 |     pub id: Option<String>,
+    |         ^^
+    |
+    = note: `ResponseStreamResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `index` is never read                        
+   --> src\sdk\core\types.rs:267:9
+    |
+266 | pub struct ResponseStreamChoice {
+    |            -------------------- field in this struct
+267 |     pub index: usize,
+    |         ^^^^^
+    |
+    = note: `ResponseStreamChoice` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `kind` is never read                         
+   --> src\sdk\core\types.rs:297:9
+    |
+291 | pub struct ToolCallChunk {
+    |            ------------- field in this struct
+...
+297 |     pub kind: Option<String>,
+    |         ^^^^
+    |
+    = note: `ToolCallChunk` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `supports_streaming`, `supports_tools`, `supports_vision`, and `supports_reasoning` are never read
+  --> src\sdk\provider\mod.rs:15:9
+   |
+14 | pub struct ModelCapabilities {
+   |            ----------------- fields in this struct
+15 |     pub supports_streaming: bool,
+   |         ^^^^^^^^^^^^^^^^^^
+16 |     pub supports_tools: bool,
+   |         ^^^^^^^^^^^^^^
+17 |     pub supports_vision: bool,
+   |         ^^^^^^^^^^^^^^^
+18 |     pub supports_reasoning: bool,
+   |         ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `ModelCapabilities` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `id`, `display_name`, `provider_id`, `max_output_tokens`, and `capabilities` are never read
+  --> src\sdk\provider\mod.rs:23:9
+   |
+22 | pub struct ModelInfo {
+   |            --------- fields in this struct
+23 |     pub id: String,
+   |         ^^
+24 |     pub display_name: String,
+   |         ^^^^^^^^^^^^
+25 |     pub provider_id: String,
+   |         ^^^^^^^^^^^
+26 |     pub context_window: Option<usize>,
+27 |     pub max_output_tokens: Option<usize>,
+   |         ^^^^^^^^^^^^^^^^^
+28 |     pub capabilities: ModelCapabilities,
+   |         ^^^^^^^^^^^^
+   |
+   = note: `ModelInfo` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `base_url` is never used
+  --> src\sdk\provider\openai_compatible.rs:26:12
+   |
+18 | impl OpenAICompatibleProvider {
+   | ----------------------------- method in this implementation
+...
+26 |     pub fn base_url(&self) -> &str {
+   |            ^^^^^^^^
+
+warning: struct `ProviderRegistry` is never constructed     
+ --> src\sdk\provider\registry.rs:7:12
+  |
+7 | pub struct ProviderRegistry {
+  |            ^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `register`, `get`, `providers`, and `list_models` are never used
+  --> src\sdk\provider\registry.rs:12:12
+   |
+11 | impl ProviderRegistry {
+   | --------------------- associated items in this implementation
+12 |     pub fn new() -> Self {
+   |            ^^^
+...
+18 |     pub fn register(&mut self, provider: Arc<dyn Provider>) {
+   |            ^^^^^^^^
+...
+22 |     pub fn get(&self, id: &str) -> Option<Arc<dyn Provider>> {
+   |            ^^^
+...
+26 |     pub fn providers(&self) -> Vec<Arc<dyn Provider>> {
+   |            ^^^^^^^^^
+...
+30 |     pub fn list_models(&self) -> Vec<ModelInfo> {
+   |            ^^^^^^^^^^^
+
+warning: function `parse_sse_stream` is never used
+  --> src\sdk\stream\parse.rs:15:8
+   |
+15 | pub fn parse_sse_stream(
+   |        ^^^^^^^^^^^^^^^^
+
+warning: field `raw_output` is never read                   
+  --> src\sdk\tools\registry.rs:12:9
+   |
+10 | pub struct AgentToolOutput {
+   |            --------------- field in this struct
+11 |     pub llm_output: String,
+12 |     pub raw_output: Option<String>,
+   |         ^^^^^^^^^^
+   |
+   = note: `AgentToolOutput` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `with_raw_output` is never used
+  --> src\sdk\tools\registry.rs:23:12
+   |
+15 | impl AgentToolOutput {
+   | -------------------- associated function in this implementation
+...
+23 |     pub fn with_raw_output(llm_output: String, raw_output: String) -> Self {
+   |            ^^^^^^^^^^^^^^^
+
+warning: method `schema_format` is never used               
+  --> src\sdk\tools\registry.rs:36:8
+   |
+32 | pub trait AgentTool: Send + Sync {
+   |           --------- method in this trait
+...
+36 |     fn schema_format(&self) -> ToolSchemaFormat {
+   |        ^^^^^^^^^^^^^
+
+warning: methods `names` and `with_policy` are never used   
+   --> src\sdk\tools\registry.rs:98:12
+    |
+ 65 | impl ToolRegistry {
+    | ----------------- methods in this implementation
+...
+ 98 |     pub fn names(&self) -> Vec<String> {
+    |            ^^^^^
+...
+106 |     pub fn with_policy(mut self, policy: ToolPolicy) -> Self {
+    |            ^^^^^^^^^^^
+
+warning: method `base_url` is never used                    
+  --> src\sdk\transport\http.rs:63:12
+   |
+38 | impl HttpTransport {
+   | ------------------ method in this implementation
+...
+63 |     pub fn base_url(&self) -> &str {
+   |            ^^^^^^^^
+
+warning: field `messages` is never read                     
+  --> src\sdk\agent.rs:42:9
+   |
+40 |     Cancelled {
+   |     --------- field in this variant
+41 |         reason: String,
+42 |         messages: Vec<Message>,
+   |         ^^^^^^^^
+   |
+   = note: `AgentEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `messages` is never read                     
+  --> src\sdk\agent.rs:54:9
+   |
+52 | pub struct AgentResult {
+   |            ----------- field in this struct
+53 |     pub text: String,
+54 |     pub messages: Vec<Message>,
+   |         ^^^^^^^^
+   |
+   = note: `AgentResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `is_cancelled` is never used                
+  --> src\sdk\agent.rs:67:12
+   |
+62 | impl AgentRunHandle {
+   | ------------------- method in this implementation
+...
+67 |     pub fn is_cancelled(&self) -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: methods `with_max_tokens`, `with_temperature`, and `run_streaming_with_debug` are never used
+   --> src\sdk\agent.rs:115:12
+    |
+ 83 | impl Agent {
+    | ---------- methods in this implementation
+...
+115 |     pub fn with_max_tokens(mut self, max: u32) -> Self {
+    |            ^^^^^^^^^^^^^^^
+...
+120 |     pub fn with_temperature(mut self, temperature: f32) -> Self {
+    |            ^^^^^^^^^^^^^^^^
+...
+203 |     pub async fn run_streaming_with_debug(
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `append`, `append_many`, and `clear` are never used
+  --> src\sdk\session.rs:61:18
+   |
+27 | impl SessionStore {
+   | ----------------- methods in this implementation
+...
+61 |     pub async fn append(&self, id: &str, message: Message) {
+   |                  ^^^^^^
+...
+69 |     pub async fn append_many(&self, id: &str, messages: Vec<Message>) {
+   |                  ^^^^^^^^^^^
+...
+93 |     pub async fn clear(&self, id: &str) {
+   |                  ^^^^^
+
+warning: type alias `SharedSessionStore` is never used      
+   --> src\sdk\session.rs:108:10
+    |
+108 | pub type SharedSessionStore = Arc<SessionStore>;
+    |          ^^^^^^^^^^^^^^^^^^
+
+warning: fields `api_key` and `base_url` are never read     
+  --> src\sdk\client.rs:18:5
+   |
+16 | pub struct AIClient {
+   |            -------- fields in this struct
+17 |     provider: OpenAICompatibleProvider,
+18 |     api_key: String,
+   |     ^^^^^^^
+19 |     base_url: String,
+   |     ^^^^^^^^
+   |
+   = note: `AIClient` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: methods `base_url`, `with_model`, `switch_model`, and `stream` are never used
+  --> src\sdk\client.rs:40:12
+   |
+22 | impl AIClient {
+   | ------------- methods in this implementation
+...
+40 |     pub fn base_url(&self) -> &str {
+   |            ^^^^^^^^
+...
+44 |     pub fn with_model(mut self, model: &str) -> Self {
+   |            ^^^^^^^^^^
+...
+51 |     pub fn switch_model(&self, model: &str) -> Result<Self> {
+   |            ^^^^^^^^^^^^
+...
+59 |     pub async fn stream(
+   |                  ^^^^^^
+
+warning: `voidesk` (lib) generated 44 warnings (run `cargo fix --lib -p voidesk` to apply 12 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 26s
+     Running `target\debug\voidesk.exe`
+1:31:00 PM [vite] (client) Pre-transform error: Failed to resolve import "@codemirror/autocomplete" from "src/components/editor/CodeEditor.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/bijim/void-desk/src/components/editor/CodeEditor.tsx:34:104
+  49 |  import { json } from "@codemirror/lang-json";
+  50 |  import { markdown } from "@codemirror/lang-markdown";
+  51 |  import { closeBrackets, closeBracketsKeymap, autocompletion } from "@codemirror/autocomplete";
+     |                                                                      ^
+  52 |  import { hoverTooltip } from "@codemirror/view";
+  53 |  import { oneDark } from "@codemirror/theme-one-dark";
+1:31:17 PM [vite] (client) ✨ new dependencies optimized: react-dom/client, zustand, zustand/middleware, @tauri-apps/api/core, @tauri-apps/api/event, @tauri-apps/plugin-dialog, lucide-react, react-markdown, react-syntax-highlighter, react-syntax-highlighter/dist/esm/styles/prism, @radix-ui/react-dialog, fuse.js, clsx, tailwind-merge, @codemirror/state, @codemirror/view, @codemirror/commands, @codemirror/language, @codemirror/lang-javascript, @codemirror/lang-python, @codemirror/lang-rust, @codemirror/lang-html, @codemirror/lang-css, @codemirror/lang-json, @codemirror/lang-markdown, @codemirror/theme-one-dark, @codemirror/search, @replit/codemirror-lang-csharp, @replit/codemirror-lang-svelte, @replit/codemirror-vscode-keymap, @replit/codemirror-interact, @replit/codemirror-minimap, @xterm/xterm, @xterm/addon-fit, @xterm/addon-web-links, @xterm/addon-search
+1:31:17 PM [vite] (client) ✨ optimized dependencies changed. reloading
+1:31:18 PM [vite] Internal server error: Failed to resolve import "@codemirror/autocomplete" from "src/components/editor/CodeEditor.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/bijim/void-desk/src/components/editor/CodeEditor.tsx:34:104
+  49 |  import { json } from "@codemirror/lang-json";
+  50 |  import { markdown } from "@codemirror/lang-markdown";
+  51 |  import { closeBrackets, closeBracketsKeymap, autocompletion } from "@codemirror/autocomplete";
+     |                                                                      ^
+  52 |  import { hoverTooltip } from "@codemirror/view";
+  53 |  import { oneDark } from "@codemirror/theme-one-dark";
+      at TransformPluginContext._formatLog (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:42528:41)
+      at TransformPluginContext.error (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:42525:16)
+      at normalizeUrl (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:40504:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:40623:37
+      at async Promise.all (index 15)
+      at async TransformPluginContext.transform (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:40550:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:42323:18)
+      at async loadAndTransform (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:35739:27)
+      at async viteTransformMiddleware (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:37254:24)
+1:31:20 PM [vite] Internal server error: Failed to resolve import "@codemirror/autocomplete" from "src/components/editor/CodeEditor.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/bijim/void-desk/src/components/editor/CodeEditor.tsx:34:104
+  49 |  import { json } from "@codemirror/lang-json";
+  50 |  import { markdown } from "@codemirror/lang-markdown";
+  51 |  import { closeBrackets, closeBracketsKeymap, autocompletion } from "@codemirror/autocomplete";
+     |                                                                      ^
+  52 |  import { hoverTooltip } from "@codemirror/view";
+  53 |  import { oneDark } from "@codemirror/theme-one-dark";
+      at TransformPluginContext._formatLog (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:42528:41)
+      at TransformPluginContext.error (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:42525:16)
+      at normalizeUrl (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:40504:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:40623:37
+      at async Promise.all (index 15)
+      at async TransformPluginContext.transform (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:40550:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:42323:18)
+      at async loadAndTransform (file:///C:/Users/bijim/void-desk/node_modules/.pnpm/vite@6.4.1_jiti@2.6.1_lightningcss@1.31.1/node_modules/vite/dist/node/chunks/dep-D4NMHUTW.js:35739:27)
+1:31:20 PM [vite] (client) Pre-transform error: Failed to resolve import "@codemirror/autocomplete" from "src/components/editor/CodeEditor.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/bijim/void-desk/src/components/editor/CodeEditor.tsx:34:104
+  49 |  import { json } from "@codemirror/lang-json";
+  50 |  import { markdown } from "@codemirror/lang-markdown";
+  51 |  import { closeBrackets, closeBracketsKeymap, autocompletion } from "@codemirror/autocomplete";
+     |                                                                      ^
+  52 |  import { hoverTooltip } from "@codemirror/view";
+  53 |  import { oneDark } from "@codemirror/theme-one-dark";

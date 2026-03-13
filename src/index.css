@@ -648,6 +648,29 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+/* Tool operation shimmer — in-progress indicator */
+@keyframes tool-shimmer {
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.tool-op-shimmer {
+  background: linear-gradient(90deg,
+      rgba(255, 255, 255, 0.25) 0%,
+      rgba(255, 255, 255, 0.55) 50%,
+      rgba(255, 255, 255, 0.25) 100%);
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: tool-shimmer 2s linear infinite;
+}
+
 .shiny-effect {
   position: relative;
   overflow: hidden;

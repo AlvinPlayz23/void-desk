@@ -14,12 +14,15 @@ use tracing::{debug, error, info};
 
 use crate::sdk::client::AIClient;
 use crate::sdk::core::{
-    ChatRequest, ErrorCategory, Message, MessageContent, SdkError, StreamEvent, ToolCall, Usage,
+    ChatRequest, ErrorCategory, InlineImageAttachment, Message, MessageContent, MessagePart,
+    SdkError, StreamEvent, ToolCall, Usage,
 };
 use crate::sdk::tools::{AgentToolOutput, ToolPolicy, ToolRegistry};
 
 const DEFAULT_MAX_ITERATIONS: usize = 3000;
-const MAX_CONSECUTIVE_SELF_CORRECTIONS: usize = 2;
+const MAX_CONSECUTIVE_SELF_CORRECTIONS: usize = 10;
+const STREAM_OPEN_TIMEOUT_SECONDS: u64 = 45;
+const MULTIMODAL_COMPLETION_TIMEOUT_SECONDS: u64 = 180;
 
 /// Events emitted by the agent during execution
 #[derive(Debug, Clone)]
@@ -36,7 +39,10 @@ pub enum AgentEvent {
         result: String,
         success: bool,
     },
-    Debug(String),
+    Debug {
+        kind: String,
+        message: String,
+    },
     Cancelled {
         reason: String,
         messages: Vec<Message>,
@@ -195,7 +201,7 @@ impl Agent {
         history: Vec<Message>,
     ) -> Result<impl futures::Stream<Item = Result<AgentEvent>>> {
         let (stream, _) = self
-            .run_streaming_with_handle(user_message, history, false)
+            .run_streaming_with_handle(user_message, history, false, vec![])
             .await?;
         Ok(stream)
     }
@@ -207,7 +213,7 @@ impl Agent {
         debug_raw: bool,
     ) -> Result<impl futures::Stream<Item = Result<AgentEvent>>> {
         let (stream, _) = self
-            .run_streaming_with_handle(user_message, history, debug_raw)
+            .run_streaming_with_handle(user_message, history, debug_raw, vec![])
             .await?;
         Ok(stream)
     }
@@ -217,6 +223,7 @@ impl Agent {
         user_message: String,
         history: Vec<Message>,
         debug_raw: bool,
+        image_attachments: Vec<InlineImageAttachment>,
     ) -> Result<(
         impl futures::Stream<Item = Result<AgentEvent>>,
         AgentRunHandle,
@@ -231,8 +238,61 @@ impl Agent {
         tokio::spawn(async move {
             let mut messages = history;
             let mut consecutive_self_corrections = 0_usize;
-            messages.push(Message::user(user_message.clone()));
+            let image_count = image_attachments.len();
+            let total_image_bytes: usize = image_attachments
+                .iter()
+                .map(|attachment| {
+                    attachment
+                        .optimized_bytes
+                        .or(attachment.source_bytes)
+                        .unwrap_or(attachment.data_url.len())
+                })
+                .sum();
+            if image_attachments.is_empty() {
+                messages.push(Message::user(user_message.clone()));
+            } else {
+                messages.push(Message::user_multipart(user_message.clone(), image_attachments));
+            }
+            
+            // Debug: verify the message structure after creation
+            if let Some(last) = messages.last() {
+                let content_desc = match &last.content {
+                    Some(MessageContent::Multipart(parts)) => {
+                        let img_count = parts.iter().filter(|p| matches!(p, MessagePart::Image { .. })).count();
+                        format!("Multipart with {} parts, {} images", parts.len(), img_count)
+                    }
+                    Some(MessageContent::Plain(t)) => format!("Plain text ({} chars)", t.len()),
+                    None => "None".to_string(),
+                };
+                emit_debug(&tx, "agent", format!("Created user message: {}", content_desc)).await;
+            }
+            
             info!("Agent starting with message: {}", user_message);
+            emit_debug(
+                &tx,
+                "agent",
+                format!(
+                    "Agent run starting: history_messages={}, user_chars={}, inline_images={}, image_bytes={}",
+                    messages.len().saturating_sub(1),
+                    user_message.len(),
+                    image_count,
+                    total_image_bytes
+                ),
+            )
+            .await;
+            emit_debug(
+                &tx,
+                "attachment",
+                if image_count > 0 {
+                    format!(
+                        "Built multipart user message with {} inline image(s), total_image_bytes={}",
+                        image_count, total_image_bytes
+                    )
+                } else {
+                    "Built text-only user message".to_string()
+                },
+            )
+            .await;
 
             for iteration in 0..agent.max_iterations {
                 if cancel_flag.load(Ordering::SeqCst) {
@@ -250,104 +310,356 @@ impl Agent {
                     iteration,
                     messages.len()
                 );
-                let request = agent.build_request(messages.clone(), true);
-                debug!("Request: {:?}", serde_json::to_string(&request));
-
-                let mut stream = match agent.client.stream_with_debug(request, debug_raw).await {
-                    Ok(s) => s,
-                    Err(err) => {
-                        error!("Stream request failed: {}", err);
-                        let attempt = match register_self_correction_attempt(
-                            &mut consecutive_self_corrections,
-                            &err,
-                            "API request",
-                        ) {
-                            Ok(attempt) => attempt,
-                            Err(limit_err) => {
-                                let _ = tx.send(Err(limit_err)).await;
-                                return;
+                let contains_inline_images = messages_include_inline_images(&messages);
+                
+                // Debug: Log the actual message content structure
+                let last_msg_has_images = messages.last().map(|m| {
+                    if let Some(content) = &m.content {
+                        match content {
+                            MessageContent::Multipart(parts) => {
+                                let has_images = parts.iter().any(|p| matches!(p, MessagePart::Image { .. }));
+                                format!("last_msg_content=Multipart, parts={}, has_images={}", parts.len(), has_images)
                             }
-                        };
-                        // Feed the error back to the LLM so it can self-correct
-                        let error_msg = format!(
-                            "The API rejected the previous request with an error: {}. \
-                            This may be due to a malformed tool call or invalid message format. \
-                            Please try again with a corrected approach.",
-                            err
-                        );
-                        let _ = tx
-                            .send(Ok(AgentEvent::TextDelta(format!(
-                                "\n\n*[Retrying after API error ({}/{})...]*\n\n",
-                                attempt, MAX_CONSECUTIVE_SELF_CORRECTIONS
-                            ))))
-                            .await;
-                        messages.push(Message::user(error_msg));
-                        continue;
+                            MessageContent::Plain(t) => format!("last_msg_content=Plain, len={}", t.len()),
+                        }
+                    } else {
+                        "last_msg_content=None".to_string()
                     }
-                };
+                }).unwrap_or_else(|| "no_messages".to_string());
+                
+                emit_debug(
+                    &tx,
+                    "agent",
+                    format!(
+                        "Iteration {}: building {} request with {} message(s), image_check_details={}",
+                        iteration + 1,
+                        if contains_inline_images {
+                            "non-streaming multimodal"
+                        } else {
+                            "streaming"
+                        },
+                        messages.len(),
+                        last_msg_has_images
+                    ),
+                )
+                .await;
+                let request = agent.build_request(messages.clone(), !contains_inline_images);
+                let request_json = serde_json::to_string(&request).unwrap_or_else(|_| "serialization_failed".to_string());
+                
+                // Log the image URL format specifically
+                if contains_inline_images {
+                    if let Some(last_msg) = messages.last() {
+                        if let Some(MessageContent::Multipart(parts)) = &last_msg.content {
+                            for (i, part) in parts.iter().enumerate() {
+                                if let MessagePart::Image { image_url } = part {
+                                    let url_preview = if image_url.url.len() > 100 {
+                                        format!("{}...[{} total chars]", &image_url.url[..80], image_url.url.len())
+                                    } else {
+                                        image_url.url.clone()
+                                    };
+                                    emit_debug(&tx, "agent", format!("Image part {}: url_preview={}", i, url_preview)).await;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                emit_debug(&tx, "agent", format!("Request JSON (first 500 chars): {}", &request_json[..request_json.len().min(500)])).await;
 
+                let request_body_bytes = serde_json::to_vec(&request).map(|body| body.len()).unwrap_or(0);
                 let mut assistant_text = String::new();
                 let mut tool_calls: Vec<ToolCall> = Vec::new();
                 let mut saw_output = false;
                 let mut stream_error: Option<Error> = None;
 
-                while let Some(event) = stream.next().await {
-                    if cancel_flag.load(Ordering::SeqCst) {
-                        let _ = tx
-                            .send(Ok(AgentEvent::Cancelled {
-                                reason: "Cancelled by user".to_string(),
-                                messages: messages.clone(),
-                            }))
+                if contains_inline_images {
+                    emit_debug(
+                        &tx,
+                        "backend",
+                        format!(
+                            "Using non-streaming multimodal fallback: request_body={} bytes, iteration={}",
+                            request_body_bytes,
+                            iteration + 1
+                        ),
+                    )
+                    .await;
+
+                    let response = match timeout(
+                        Duration::from_secs(MULTIMODAL_COMPLETION_TIMEOUT_SECONDS),
+                        agent.client.complete(request),
+                    )
+                    .await
+                    {
+                        Ok(Ok(response)) => response,
+                        Ok(Err(err)) => {
+                            error!("Completion request failed: {}", err);
+                            let attempt = match register_self_correction_attempt(
+                                &mut consecutive_self_corrections,
+                                &err,
+                                "API request",
+                            ) {
+                                Ok(attempt) => attempt,
+                                Err(limit_err) => {
+                                    let _ = tx.send(Err(limit_err)).await;
+                                    return;
+                                }
+                            };
+                            emit_debug(
+                                &tx,
+                                "retry",
+                                format!(
+                                    "API request failed; asking model to self-correct ({}/{}): {}",
+                                    attempt, MAX_CONSECUTIVE_SELF_CORRECTIONS, err
+                                ),
+                            )
                             .await;
-                        return;
+                            let error_msg = format!(
+                                "The API rejected the previous request with an error: {}. \
+                                This may be due to a malformed tool call or invalid message format. \
+                                Please try again with a corrected approach.",
+                                err
+                            );
+                            let _ = tx
+                                .send(Ok(AgentEvent::TextDelta(format!(
+                                    "\n\n*[Retrying after API error ({}/{})...]*\n\n",
+                                    attempt, MAX_CONSECUTIVE_SELF_CORRECTIONS
+                                ))))
+                                .await;
+                            messages.push(Message::user(error_msg));
+                            continue;
+                        }
+                        Err(_) => {
+                            let err = Error::new(
+                                SdkError::provider(format!(
+                                    "Timed out after {}s waiting for multimodal completion response",
+                                    MULTIMODAL_COMPLETION_TIMEOUT_SECONDS
+                                ))
+                                .with_code("multimodal_completion_timeout")
+                                .with_retryable(false),
+                            );
+                            error!("Multimodal completion timed out: {}", err);
+                            emit_debug(
+                                &tx,
+                                "error",
+                                format!(
+                                    "Provider completion did not return within {}s (request_body={} bytes)",
+                                    MULTIMODAL_COMPLETION_TIMEOUT_SECONDS,
+                                    request_body_bytes
+                                ),
+                            )
+                            .await;
+                            let _ = tx.send(Err(err)).await;
+                            return;
+                        }
+                    };
+
+                    emit_debug(&tx, "stream", "Provider completion returned successfully").await;
+
+                    if let Some(usage) = response.usage.clone() {
+                        let _ = tx.send(Ok(AgentEvent::UsageDelta(usage))).await;
                     }
 
-                    match event {
-                        Ok(StreamEvent::TextDelta(text)) => {
-                            if !text.is_empty() {
-                                saw_output = true;
-                                assistant_text.push_str(&text);
-                                let _ = tx.send(Ok(AgentEvent::TextDelta(text))).await;
-                            }
-                        }
-                        Ok(StreamEvent::ReasoningDelta(reasoning)) => {
-                            if !reasoning.is_empty() {
-                                saw_output = true;
-                                let _ = tx.send(Ok(AgentEvent::ReasoningDelta(reasoning))).await;
-                            }
-                        }
-                        Ok(StreamEvent::UsageDelta(usage)) => {
-                            let _ = tx.send(Ok(AgentEvent::UsageDelta(usage))).await;
-                        }
-                        Ok(StreamEvent::ToolCall {
-                            id,
-                            name,
-                            arguments,
-                        }) => {
+                    let Some(choice) = response.choices.into_iter().next() else {
+                        let err = Error::new(
+                            SdkError::provider("Provider returned no completion choices")
+                                .with_code("empty_completion_choices")
+                                .with_retryable(false),
+                        );
+                        emit_debug(&tx, "error", format!("Provider completion error: {}", err)).await;
+                        let _ = tx.send(Err(err)).await;
+                        return;
+                    };
+
+                    let content = choice.message.text();
+                    if !content.is_empty() {
+                        saw_output = true;
+                        assistant_text.push_str(&content);
+                        let _ = tx.send(Ok(AgentEvent::TextDelta(content))).await;
+                    }
+
+                    if let Some(completion_tool_calls) = choice.message.tool_calls {
+                        for tool_call in completion_tool_calls {
                             saw_output = true;
-                            info!("Tool call received: {} with args: {}", name, arguments);
-                            tool_calls.push(ToolCall::new(id, name, arguments));
+                            emit_debug(
+                                &tx,
+                                "tool",
+                                format!("Model emitted tool call {}", tool_call.function.name),
+                            )
+                            .await;
+                            tool_calls.push(tool_call);
                         }
-                        Ok(StreamEvent::Raw(raw)) => {
-                            if debug_raw {
-                                let _ = tx.send(Ok(AgentEvent::Debug(raw))).await;
-                            }
-                        }
-                        Ok(StreamEvent::Done) => {
-                            info!(
-                                "Stream done - text: {} chars, tool_calls: {}, saw_output: {}",
-                                assistant_text.len(),
-                                tool_calls.len(),
-                                saw_output
+                    }
+
+                    emit_debug(
+                        &tx,
+                        "stream",
+                        format!(
+                            "Provider completion finished: text_chars={}, tool_calls={}, saw_output={}",
+                            assistant_text.len(),
+                            tool_calls.len(),
+                            saw_output
+                        ),
+                    )
+                    .await;
+                } else {
+                    emit_debug(
+                        &tx,
+                        "backend",
+                        format!(
+                            "Opening provider stream: request_body={} bytes, debug_raw={}, iteration={}",
+                            request_body_bytes,
+                            debug_raw,
+                            iteration + 1
+                        ),
+                    )
+                    .await;
+
+                    let mut stream = match timeout(
+                        Duration::from_secs(STREAM_OPEN_TIMEOUT_SECONDS),
+                        agent.client.stream_with_debug(request, debug_raw),
+                    )
+                    .await
+                    {
+                        Ok(Ok(s)) => s,
+                        Ok(Err(err)) => {
+                            error!("Stream request failed: {}", err);
+                            let attempt = match register_self_correction_attempt(
+                                &mut consecutive_self_corrections,
+                                &err,
+                                "API request",
+                            ) {
+                                Ok(attempt) => attempt,
+                                Err(limit_err) => {
+                                    let _ = tx.send(Err(limit_err)).await;
+                                    return;
+                                }
+                            };
+                            emit_debug(
+                                &tx,
+                                "retry",
+                                format!(
+                                    "API request failed; asking model to self-correct ({}/{}): {}",
+                                    attempt, MAX_CONSECUTIVE_SELF_CORRECTIONS, err
+                                ),
+                            )
+                            .await;
+                            let error_msg = format!(
+                                "The API rejected the previous request with an error: {}. \
+                                This may be due to a malformed tool call or invalid message format. \
+                                Please try again with a corrected approach.",
+                                err
                             );
-                            if saw_output {
+                            let _ = tx
+                                .send(Ok(AgentEvent::TextDelta(format!(
+                                    "\n\n*[Retrying after API error ({}/{})...]*\n\n",
+                                    attempt, MAX_CONSECUTIVE_SELF_CORRECTIONS
+                                ))))
+                                .await;
+                            messages.push(Message::user(error_msg));
+                            continue;
+                        }
+                        Err(_) => {
+                            let err = Error::new(
+                                SdkError::provider(format!(
+                                    "Timed out after {}s waiting for provider to open streaming response",
+                                    STREAM_OPEN_TIMEOUT_SECONDS
+                                ))
+                                .with_code("stream_open_timeout")
+                                .with_retryable(false),
+                            );
+                            error!("Stream open timed out: {}", err);
+                            emit_debug(
+                                &tx,
+                                "error",
+                                format!(
+                                    "Provider stream did not open within {}s (request_body={} bytes)",
+                                    STREAM_OPEN_TIMEOUT_SECONDS,
+                                    request_body_bytes
+                                ),
+                            )
+                            .await;
+                            let _ = tx.send(Err(err)).await;
+                            return;
+                        }
+                    };
+                    emit_debug(&tx, "stream", "Provider stream opened successfully").await;
+
+                    while let Some(event) = stream.next().await {
+                        if cancel_flag.load(Ordering::SeqCst) {
+                            let _ = tx
+                                .send(Ok(AgentEvent::Cancelled {
+                                    reason: "Cancelled by user".to_string(),
+                                    messages: messages.clone(),
+                                }))
+                                .await;
+                            return;
+                        }
+
+                        match event {
+                            Ok(StreamEvent::TextDelta(text)) => {
+                                if !text.is_empty() {
+                                    saw_output = true;
+                                    assistant_text.push_str(&text);
+                                    let _ = tx.send(Ok(AgentEvent::TextDelta(text))).await;
+                                }
+                            }
+                            Ok(StreamEvent::ReasoningDelta(reasoning)) => {
+                                if !reasoning.is_empty() {
+                                    saw_output = true;
+                                    let _ = tx.send(Ok(AgentEvent::ReasoningDelta(reasoning))).await;
+                                }
+                            }
+                            Ok(StreamEvent::UsageDelta(usage)) => {
+                                let _ = tx.send(Ok(AgentEvent::UsageDelta(usage))).await;
+                            }
+                            Ok(StreamEvent::ToolCall {
+                                id,
+                                name,
+                                arguments,
+                            }) => {
+                                saw_output = true;
+                                info!("Tool call received: {} with args: {}", name, arguments);
+                                emit_debug(
+                                    &tx,
+                                    "tool",
+                                    format!("Model emitted tool call {}", name),
+                                )
+                                .await;
+                                tool_calls.push(ToolCall::new(id, name, arguments));
+                            }
+                            Ok(StreamEvent::Raw(raw)) => {
+                                if debug_raw {
+                                    emit_debug(&tx, "raw", raw).await;
+                                }
+                            }
+                            Ok(StreamEvent::Done) => {
+                                info!(
+                                    "Stream done - text: {} chars, tool_calls: {}, saw_output: {}",
+                                    assistant_text.len(),
+                                    tool_calls.len(),
+                                    saw_output
+                                );
+                                emit_debug(
+                                    &tx,
+                                    "stream",
+                                    format!(
+                                        "Provider stream signaled done: text_chars={}, tool_calls={}, saw_output={}",
+                                        assistant_text.len(),
+                                        tool_calls.len(),
+                                        saw_output
+                                    ),
+                                )
+                                .await;
+                                if saw_output {
+                                    break;
+                                }
+                            }
+                            Err(err) => {
+                                error!("Stream error: {}", err);
+                                emit_debug(&tx, "error", format!("Provider stream error: {}", err)).await;
+                                stream_error = Some(err);
                                 break;
                             }
-                        }
-                        Err(err) => {
-                            error!("Stream error: {}", err);
-                            stream_error = Some(err);
-                            break;
                         }
                     }
                 }
@@ -365,6 +677,15 @@ impl Agent {
                             return;
                         }
                     };
+                    emit_debug(
+                        &tx,
+                        "retry",
+                        format!(
+                            "Streaming response failed; asking model to self-correct ({}/{}): {}",
+                            attempt, MAX_CONSECUTIVE_SELF_CORRECTIONS, err
+                        ),
+                    )
+                    .await;
                     let error_msg = format!(
                         "The API returned an error during streaming: {}. \
                         This may be due to a malformed tool call or response format issue. \
@@ -391,6 +712,12 @@ impl Agent {
                     if !assistant_text.is_empty() {
                         messages.push(Message::assistant_text(assistant_text.clone()));
                     }
+                    emit_debug(
+                        &tx,
+                        "success",
+                        format!("Agent completed without tool calls; final_text_chars={}", assistant_text.len()),
+                    )
+                    .await;
                     let _ = tx
                         .send(Ok(AgentEvent::Done {
                             final_text: assistant_text,
@@ -428,6 +755,7 @@ impl Agent {
                             });
 
                         info!("Executing tool: {} with input: {:?}", name, input);
+                        emit_debug(&tx, "tool", format!("Executing tool {}", name)).await;
                         let _ = tx
                             .send(Ok(AgentEvent::ToolStart {
                                 name: name.clone(),
@@ -444,10 +772,17 @@ impl Agent {
                                     name,
                                     output.llm_output.len()
                                 );
+                                emit_debug(
+                                    &tx,
+                                    "tool",
+                                    format!("Tool {} succeeded with {} chars of output", name, output.llm_output.len()),
+                                )
+                                .await;
                                 (output.llm_output, true)
                             }
                             Err(err) => {
                                 error!("Tool {} failed: {}", name, err);
+                                emit_debug(&tx, "error", format!("Tool {} failed: {}", name, err)).await;
                                 (format!("Error: {}", err), false)
                             }
                         };
@@ -465,6 +800,7 @@ impl Agent {
                             }))
                             .await;
                     }
+                    emit_debug(&tx, "agent", "Tool execution phase complete; continuing agent loop").await;
                     info!("Tool execution complete, continuing to next iteration");
                 }
             }
@@ -568,6 +904,31 @@ fn register_self_correction_attempt(
     Ok(*consecutive_attempts)
 }
 
+fn messages_include_inline_images(messages: &[Message]) -> bool {
+    messages.iter().any(|message| {
+        let has_inline = match message.content.as_ref() {
+            Some(MessageContent::Multipart(parts)) => {
+                parts.iter().any(|part| matches!(part, MessagePart::Image { .. }))
+            }
+            _ => false,
+        };
+        has_inline
+    })
+}
+
+async fn emit_debug(
+    tx: &mpsc::Sender<Result<AgentEvent>>,
+    kind: &str,
+    message: impl Into<String>,
+) {
+    let _ = tx
+        .send(Ok(AgentEvent::Debug {
+            kind: kind.to_string(),
+            message: message.into(),
+        }))
+        .await;
+}
+
 fn should_attempt_self_correction(err: &Error) -> bool {
     let Some(sdk_err) = err.downcast_ref::<SdkError>() else {
         return false;
@@ -580,7 +941,10 @@ fn should_attempt_self_correction(err: &Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{register_self_correction_attempt, should_attempt_self_correction};
+    use super::{
+        register_self_correction_attempt, should_attempt_self_correction,
+        MAX_CONSECUTIVE_SELF_CORRECTIONS,
+    };
     use crate::sdk::core::SdkError;
     use anyhow::Error;
 
@@ -607,8 +971,9 @@ mod tests {
         let err = Error::new(SdkError::provider("bad request").with_status(400));
         let mut attempts = 0;
 
-        assert!(register_self_correction_attempt(&mut attempts, &err, "API request").is_ok());
-        assert!(register_self_correction_attempt(&mut attempts, &err, "API request").is_ok());
+        for _ in 0..MAX_CONSECUTIVE_SELF_CORRECTIONS {
+            assert!(register_self_correction_attempt(&mut attempts, &err, "API request").is_ok());
+        }
         assert!(register_self_correction_attempt(&mut attempts, &err, "API request").is_err());
     }
 }

@@ -31,6 +31,7 @@ anyhow = "1"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
 
 # File watcher
 notify = { version = "6", features = ["macos_fsevent"] }

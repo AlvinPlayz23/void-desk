@@ -12,17 +12,36 @@ export type MessagePart =
     | { type: "text"; text: string }
     | { type: "tool"; id: string; toolOperation: ToolOperation };
 
+export type ChatAttachment =
+    | {
+        id: string;
+        kind: "text";
+        name: string;
+        mimeType: string;
+        textContent: string;
+        preparedForModelId?: string;
+    }
+    | {
+        id: string;
+        kind: "image";
+        name: string;
+        mimeType: string;
+        dataUrl: string;
+        preparedForModelId?: string;
+    };
+
 export interface Message {
     role: "user" | "assistant";
     content: string;
     tool_call?: string;
     toolOperations?: ToolOperation[];
     parts: MessagePart[];
+    attachments?: ChatAttachment[];
     timestamp: number;
 }
 
 const getToolPartId = (op: ToolOperation) =>
-    `${op.operation}:${op.target}`;
+    `tool:${op.target}`;
 
 const deriveContentFromParts = (parts: MessagePart[]) =>
     parts
@@ -44,9 +63,23 @@ const normalizeMessage = (message: any): Message => {
     return { ...message, parts, content: message.content ?? deriveContentFromParts(parts) };
 };
 
+// Avoid persisting attachment payloads (text blobs / base64 images) into localStorage.
+// They stay available in-memory for the active chat session, but skipping them in
+// persisted state prevents large synchronous writes on every streaming update.
+const stripPersistedAttachments = (message: Message): Message => ({
+    ...normalizeMessage(message),
+    attachments: undefined,
+});
+
+const stripPersistedSessions = (sessions: ChatSession[]): ChatSession[] =>
+    sessions.map((session) => ({
+        ...session,
+        messages: session.messages.map(stripPersistedAttachments),
+    }));
+
 export interface DebugLog {
     timestamp: number;
-    type: "info" | "error" | "tool" | "retry" | "raw";
+    type: string;
     message: string;
 }
 
@@ -243,10 +276,10 @@ export const useChatStore = create<ChatState>()(
                     const newMessages = [...current.messages];
                     const lastMsg = newMessages[lastIndex];
 
-                    // Update legacy toolOperations array
+                    // Update legacy toolOperations array — match by target only
                     const ops = [...(lastMsg.toolOperations || [])];
                     const existingIdx = ops.findIndex(
-                        (op) => op.operation === operation.operation && op.target === operation.target
+                        (op) => op.target === operation.target
                     );
                     if (existingIdx !== -1) {
                         ops[existingIdx] = { ...ops[existingIdx], ...operation };
@@ -254,7 +287,7 @@ export const useChatStore = create<ChatState>()(
                         ops.push(operation);
                     }
 
-                    // Update parts array
+                    // Update parts array — match by target-based ID
                     const toolId = getToolPartId(operation);
                     const parts = [...lastMsg.parts];
                     const existingPartIdx = parts.findIndex(
@@ -320,10 +353,12 @@ export const useChatStore = create<ChatState>()(
                     const current = state.currentSession();
                     if (!current) return state;
 
+                    const nextDebugLogs = [...current.debugLogs, log].slice(-500);
+
                     return {
                         sessions: state.sessions.map((s) =>
                             s.id === current.id
-                                ? { ...s, debugLogs: [...s.debugLogs, log], lastUpdated: Date.now() }
+                                ? { ...s, debugLogs: nextDebugLogs, lastUpdated: Date.now() }
                                 : s
                         ),
                     };
@@ -390,15 +425,23 @@ export const useChatStore = create<ChatState>()(
         }),
         {
             name: "voiddesk-chat-sessions",
-            version: 2,
+            version: 4,
+            partialize: (state) => ({
+                sessions: stripPersistedSessions(state.sessions),
+                activeSessionId: state.activeSessionId,
+            }),
             migrate: (persistedState: any, _version: number) => {
                 if (!persistedState?.sessions) return persistedState;
                 return {
                     ...persistedState,
-                    sessions: persistedState.sessions.map((session: any) => ({
-                        ...session,
-                        messages: (session.messages ?? []).map(normalizeMessage),
-                    })),
+                    sessions: stripPersistedSessions(
+                        persistedState.sessions.map((session: any) => ({
+                            ...session,
+                            messages: (session.messages ?? []).map((msg: any) => normalizeMessage(msg)),
+                            debugLogs: session.debugLogs ?? [],
+                            contextPaths: session.contextPaths ?? [],
+                        }))
+                    ),
                 };
             },
         }

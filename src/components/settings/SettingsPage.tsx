@@ -58,7 +58,7 @@ interface PendingSettings {
     // AI
     openAIKey?: string;
     openAIBaseUrl?: string;
-    aiModels?: { id: string; name: string }[];
+    aiModels?: { id: string; name: string; supportsImages: boolean }[];
     selectedModelId?: string;
     inlineCompletionsEnabled?: boolean;
     chatContextWindow?: number;
@@ -459,13 +459,13 @@ function AppearanceSettings({
 interface AISettingsProps {
     currentKey: string;
     currentBaseUrl: string;
-    currentModels: { id: string; name: string }[];
+    currentModels: { id: string; name: string; supportsImages: boolean }[];
     currentSelectedModelId: string;
     currentInlineEnabled: boolean;
     currentChatContextWindow: number;
     onKeyChange: (key: string) => void;
     onBaseUrlChange: (url: string) => void;
-    onModelsChange: (models: { id: string; name: string }[]) => void;
+    onModelsChange: (models: { id: string; name: string; supportsImages: boolean }[]) => void;
     onSelectedModelIdChange: (id: string) => void;
     onInlineEnabledChange: (enabled: boolean) => void;
     onChatContextWindowChange: (tokens: number) => void;
@@ -577,6 +577,21 @@ function AISettings({
                                             placeholder="Model ID"
                                             className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
                                         />
+                                        <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer whitespace-nowrap" title="Model supports image input">
+                                            <input
+                                                type="checkbox"
+                                                checked={model.supportsImages}
+                                                onChange={(e) =>
+                                                    onModelsChange(
+                                                        currentModels.map((item, idx) =>
+                                                            idx === index ? { ...item, supportsImages: e.target.checked } : item
+                                                        )
+                                                    )
+                                                }
+                                                className="w-3.5 h-3.5 rounded border-gray-600 bg-transparent accent-emerald-500"
+                                            />
+                                            Vision
+                                        </label>
                                         {currentModels.length > 1 && (
                                             <button
                                                 onClick={() => onModelsChange(currentModels.filter((_, idx) => idx !== index))}
@@ -590,7 +605,7 @@ function AISettings({
                                 </div>
                             ))}
                             <button
-                                onClick={() => onModelsChange([...currentModels, { id: "", name: "" }])}
+                                onClick={() => onModelsChange([...currentModels, { id: "", name: "", supportsImages: false }])}
                                 className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all"
                             >
                                 <Plus className="w-3.5 h-3.5" />

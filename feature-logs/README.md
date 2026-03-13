@@ -225,3 +225,4 @@ Box drawing characters:
 | [2025-01-23](./2025-01-23.md) | File Watching, Find & Replace, Multi-Language Syntax, LSP Plan, Future Optimizations |
 | [2025-01-24](./2025-01-24.md) | LSP Autocomplete/Hover Fix, Windows URI Formatting, Request Routing, Server Request Handling |
 | [2025-01-27](./2025-01-27.md) | Drag & Drop Fix (Tauri dragDropEnabled), Root Drop Zone |
+| [2026-03-13](./2026-03-13.md) | Image Attachment Timeout Fix, Non-Streaming Multimodal Fallback, Transport Diagnostics |

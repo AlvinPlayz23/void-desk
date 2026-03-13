@@ -52,6 +52,21 @@ pub struct ImageUrl {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InlineImageAttachment {
+    pub name: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    #[serde(rename = "dataUrl")]
+    pub data_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(rename = "sourceBytes", skip_serializing_if = "Option::is_none")]
+    pub source_bytes: Option<usize>,
+    #[serde(rename = "optimizedBytes", skip_serializing_if = "Option::is_none")]
+    pub optimized_bytes: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallFunction {
     pub name: String,
@@ -90,6 +105,30 @@ impl Message {
         Self {
             role: "user".to_string(),
             content: Some(MessageContent::Plain(text)),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    pub fn user_multipart(text: String, image_attachments: Vec<InlineImageAttachment>) -> Self {
+        if image_attachments.is_empty() {
+            return Self::user(text);
+        }
+        let mut parts = Vec::new();
+        if !text.is_empty() {
+            parts.push(MessagePart::Text { text });
+        }
+        for attachment in image_attachments {
+            parts.push(MessagePart::Image {
+                image_url: ImageUrl {
+                    url: attachment.data_url,
+                    detail: attachment.detail,
+                },
+            });
+        }
+        Self {
+            role: "user".to_string(),
+            content: Some(MessageContent::Multipart(parts)),
             tool_calls: None,
             tool_call_id: None,
         }

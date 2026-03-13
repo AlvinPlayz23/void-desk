@@ -3,7 +3,10 @@
 //! This module provides Tauri commands for AI interactions using the custom SDK.
 
 use super::ai_service::AIService;
-use crate::sdk::{AIClient, AgentEvent, AgentRunHandle, ErrorCategory, Message, SdkError};
+use crate::sdk::{
+    AIClient, AgentEvent, AgentRunHandle, ErrorCategory, InlineImageAttachment, Message,
+    SdkError,
+};
 use anyhow::Error;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -48,8 +51,11 @@ pub struct AIResponseChunk {
     pub tool_call: Option<String>,
     pub tool_operation: Option<ToolOperation>,
     pub debug: Option<String>,
+    pub debug_type: Option<String>,
     pub error: Option<String>,
     pub error_type: Option<String>,
+    pub error_status: Option<u16>,
+    pub retryable: Option<bool>,
     pub done: bool,
 }
 
@@ -120,10 +126,23 @@ pub async fn ask_ai_stream(
         active_path,
         debug_raw_stream,
         request_id,
+        image_attachments: None,
         session_id,
         on_event,
     })
     .await
+}
+
+fn total_inline_image_bytes(attachments: &[InlineImageAttachment]) -> usize {
+    attachments
+        .iter()
+        .map(|attachment| {
+            attachment
+                .optimized_bytes
+                .or(attachment.source_bytes)
+                .unwrap_or(attachment.data_url.len())
+        })
+        .sum()
 }
 
 #[tauri::command]
@@ -329,6 +348,7 @@ pub async fn ask_ai_stream_with_session(
     active_path: Option<String>,
     debug_raw_stream: Option<bool>,
     request_id: Option<String>,
+    image_attachments: Option<Vec<InlineImageAttachment>>,
     on_event: Channel<AIResponseChunk>,
 ) -> Result<(), String> {
     let service = get_ai_service().await;
@@ -354,6 +374,7 @@ pub async fn ask_ai_stream_with_session(
         active_path,
         debug_raw_stream,
         request_id,
+        image_attachments,
         session_id,
         on_event,
     })
@@ -370,6 +391,7 @@ struct StreamRequest {
     active_path: Option<String>,
     debug_raw_stream: Option<bool>,
     request_id: Option<String>,
+    image_attachments: Option<Vec<InlineImageAttachment>>,
     session_id: String,
     on_event: Channel<AIResponseChunk>,
 }
@@ -377,23 +399,97 @@ struct StreamRequest {
 async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
     let api_key = req.api_key.trim();
     let model_id = req.model_id.trim();
+    let request_id = req
+        .request_id
+        .clone()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     if api_key.is_empty() {
         send_error_chunk(
             &req.on_event,
             "API key is required".to_string(),
             "validation",
+            None,
+            Some(false),
         )?;
         return Ok(());
     }
+
+    let image_attachments_count = req.image_attachments.as_ref().map(|imgs| imgs.len()).unwrap_or(0);
+    let image_attachments_bytes = req.image_attachments
+        .as_ref()
+        .map(|imgs| total_inline_image_bytes(imgs))
+        .unwrap_or(0);
+    
+    // Debug: log details of each image attachment
+    if let Some(ref attachments) = req.image_attachments {
+        for (i, att) in attachments.iter().enumerate() {
+            let detail_str = att.detail.as_deref().unwrap_or("none");
+            send_debug_chunk(
+                &req.on_event,
+                format!(
+                    "Image attachment {}: name={}, mimeType={}, dataUrl_len={}, detail={}, sourceBytes={:?}, optimizedBytes={:?}",
+                    i,
+                    att.name,
+                    att.mime_type,
+                    att.data_url.len(),
+                    detail_str,
+                    att.source_bytes,
+                    att.optimized_bytes
+                ),
+                "backend",
+            )?;
+        }
+    }
+    
+    send_debug_chunk(
+        &req.on_event,
+        format!(
+            "Request {} received: model={}, message_chars={}, override_history={}, image_attachments={}, image_bytes={}, raw_stream={}",
+            request_id,
+            model_id,
+            req.message.len(),
+            req.history_messages.as_ref().map(|msgs| msgs.len()).unwrap_or(0),
+            image_attachments_count,
+            image_attachments_bytes,
+            req.debug_raw_stream.unwrap_or(false)
+        ),
+        "backend",
+    )?;
 
     let service = get_ai_service().await;
     let model_context_window = AIClient::new(api_key, &req.base_url, model_id)
         .ok()
         .and_then(|client| client.model_info().context_window);
-    let agent =
-        AIService::create_agent(api_key, &req.base_url, model_id, req.active_path.as_deref())
-            .map_err(|e| format!("Failed to create agent: {}", e))?;
+    let effective_context_window =
+        resolve_effective_context_window(req.context_window_tokens, model_context_window);
+
+    let agent = match AIService::create_agent(api_key, &req.base_url, model_id, req.active_path.as_deref()) {
+        Ok(agent) => agent,
+        Err(err) => {
+            send_error_chunk(
+                &req.on_event,
+                format!("Failed to create agent: {}", err),
+                "internal",
+                None,
+                Some(false),
+            )?;
+            return Ok(());
+        }
+    };
+
+    send_debug_chunk(
+        &req.on_event,
+        format!(
+            "Agent created for request {}. active_path={:?}, model_context_window={:?}, effective_context_window={}",
+            request_id,
+            req.active_path,
+            model_context_window,
+            effective_context_window
+        ),
+        "backend",
+    )?;
 
     let session_store = service.session_store();
     let stored_history = session_store
@@ -401,27 +497,55 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
         .await
         .map(|s| s.messages)
         .unwrap_or_default();
+    let stored_history_count = stored_history.len();
     let history = trim_history_to_context_window(
         resolve_request_history(stored_history, req.history_messages),
-        resolve_effective_context_window(req.context_window_tokens, model_context_window),
+        effective_context_window,
     );
 
-    let request_id = req
-        .request_id
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    send_debug_chunk(
+        &req.on_event,
+        format!(
+            "History prepared for request {}: stored={}, trimmed_for_run={}, session_id={}",
+            request_id,
+            stored_history_count,
+            history.len(),
+            req.session_id
+        ),
+        "backend",
+    )?;
 
     let debug_raw_stream = req.debug_raw_stream.unwrap_or(false);
-    let (mut stream, run_handle) = agent
-        .run_streaming_with_handle(req.message, history, debug_raw_stream)
+    let image_attachments = req.image_attachments.unwrap_or_default();
+    let (mut stream, run_handle) = match agent
+        .run_streaming_with_handle(req.message, history, debug_raw_stream, image_attachments)
         .await
-        .map_err(|e| format!("Failed to run agent: {}", e))?;
+    {
+        Ok(result) => result,
+        Err(err) => {
+            let err_type = classify_error(&err);
+            send_error_chunk(
+                &req.on_event,
+                format!("Failed to run agent: {}", err),
+                err_type,
+                sdk_error_status(&err),
+                sdk_error_retryable(&err),
+            )?;
+            return Ok(());
+        }
+    };
 
     {
         let runs = active_runs().await;
         let mut map = runs.write().await;
         map.insert(request_id.clone(), run_handle);
     }
+
+    send_debug_chunk(
+        &req.on_event,
+        format!("Request {} registered as active run", request_id),
+        "backend",
+    )?;
 
     let mut completed_normally = false;
     while let Some(event) = stream.next().await {
@@ -434,8 +558,11 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
                             tool_call: None,
                             tool_operation: None,
                             debug: None,
+                            debug_type: None,
                             error: None,
                             error_type: None,
+                            error_status: None,
+                            retryable: None,
                             done: false,
                         })
                         .map_err(|e| e.to_string())?;
@@ -448,8 +575,11 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
                         tool_call: None,
                         tool_operation: None,
                         debug: Some(format!("reasoning: {}", reasoning)),
+                        debug_type: Some("stream".to_string()),
                         error: None,
                         error_type: None,
+                        error_status: None,
+                        retryable: None,
                         done: false,
                     })
                     .map_err(|e| e.to_string())?;
@@ -464,8 +594,11 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
                             "usage: prompt={:?} completion={:?} total={:?}",
                             usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
                         )),
+                        debug_type: Some("stream".to_string()),
                         error: None,
                         error_type: None,
+                        error_status: None,
+                        retryable: None,
                         done: false,
                     })
                     .map_err(|e| e.to_string())?;
@@ -483,8 +616,11 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
                             details: None,
                         }),
                         debug: None,
+                        debug_type: None,
                         error: None,
                         error_type: None,
+                        error_status: None,
+                        retryable: None,
                         done: false,
                     })
                     .map_err(|e| e.to_string())?;
@@ -519,21 +655,27 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
                             details,
                         }),
                         debug: None,
+                        debug_type: None,
                         error: None,
                         error_type: None,
+                        error_status: None,
+                        retryable: None,
                         done: false,
                     })
                     .map_err(|e| e.to_string())?;
             }
-            Ok(AgentEvent::Debug(raw)) => {
+            Ok(AgentEvent::Debug { kind, message }) => {
                 req.on_event
                     .send(AIResponseChunk {
                         content: None,
                         tool_call: None,
                         tool_operation: None,
-                        debug: Some(raw),
+                        debug: Some(message),
+                        debug_type: Some(kind),
                         error: None,
                         error_type: None,
+                        error_status: None,
+                        retryable: None,
                         done: false,
                     })
                     .map_err(|e| e.to_string())?;
@@ -545,8 +687,11 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
                         tool_call: None,
                         tool_operation: None,
                         debug: None,
+                        debug_type: None,
                         error: Some(reason),
                         error_type: Some("cancelled".to_string()),
+                        error_status: None,
+                        retryable: Some(false),
                         done: true,
                     })
                     .map_err(|e| e.to_string())?;
@@ -560,20 +705,33 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
                 session_store
                     .replace_messages(&req.session_id, messages)
                     .await;
+                send_debug_chunk(
+                    &req.on_event,
+                    format!("Request {} completed and session {} was updated", request_id, req.session_id),
+                    "success",
+                )?;
                 completed_normally = true;
                 break;
             }
             Err(err) => {
                 let err_type = classify_error(&err);
                 let error_message = format!("Stream error: {}", err);
+                send_debug_chunk(
+                    &req.on_event,
+                    format!("Request {} terminated with {} error", request_id, err_type),
+                    "error",
+                )?;
                 req.on_event
                     .send(AIResponseChunk {
                         content: None,
                         tool_call: None,
                         tool_operation: None,
                         debug: None,
+                        debug_type: None,
                         error: Some(error_message),
                         error_type: Some(err_type.to_string()),
+                        error_status: sdk_error_status(&err),
+                        retryable: sdk_error_retryable(&err),
                         done: true,
                     })
                     .map_err(|e| e.to_string())?;
@@ -585,14 +743,23 @@ async fn process_ai_stream(req: StreamRequest) -> Result<(), String> {
 
     cleanup_run(&request_id).await;
 
+    send_debug_chunk(
+        &req.on_event,
+        format!("Request {} cleaned up; completed_normally={}", request_id, completed_normally),
+        if completed_normally { "success" } else { "backend" },
+    )?;
+
     req.on_event
         .send(AIResponseChunk {
             content: None,
             tool_call: None,
             tool_operation: None,
             debug: None,
+            debug_type: None,
             error: None,
             error_type: None,
+            error_status: None,
+            retryable: None,
             done: true,
         })
         .map_err(|e| e.to_string())?;
@@ -614,6 +781,8 @@ fn send_error_chunk(
     on_event: &Channel<AIResponseChunk>,
     message: String,
     error_type: &str,
+    error_status: Option<u16>,
+    retryable: Option<bool>,
 ) -> Result<(), String> {
     on_event
         .send(AIResponseChunk {
@@ -621,11 +790,43 @@ fn send_error_chunk(
             tool_call: None,
             tool_operation: None,
             debug: None,
+            debug_type: None,
             error: Some(message),
             error_type: Some(error_type.to_string()),
+            error_status,
+            retryable,
             done: true,
         })
         .map_err(|e| e.to_string())
+}
+
+fn send_debug_chunk(
+    on_event: &Channel<AIResponseChunk>,
+    message: String,
+    debug_type: &str,
+) -> Result<(), String> {
+    on_event
+        .send(AIResponseChunk {
+            content: None,
+            tool_call: None,
+            tool_operation: None,
+            debug: Some(message),
+            debug_type: Some(debug_type.to_string()),
+            error: None,
+            error_type: None,
+            error_status: None,
+            retryable: None,
+            done: false,
+        })
+        .map_err(|e| e.to_string())
+}
+
+fn sdk_error_status(err: &Error) -> Option<u16> {
+    err.downcast_ref::<SdkError>().and_then(|sdk_err| sdk_err.status)
+}
+
+fn sdk_error_retryable(err: &Error) -> Option<bool> {
+    err.downcast_ref::<SdkError>().map(|sdk_err| sdk_err.retryable)
 }
 
 fn classify_error(err: &Error) -> &'static str {

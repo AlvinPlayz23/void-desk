@@ -371,8 +371,8 @@ pub async fn debug_agent_flow(
                     event_count, name, success, result_preview
                 ));
             }
-            Ok(AgentEvent::Debug(raw)) => {
-                logs.push(format!("[{}] Raw: {}", event_count, raw));
+            Ok(AgentEvent::Debug { kind, message }) => {
+                logs.push(format!("[{}] Debug/{}: {}", event_count, kind, message));
             }
             Ok(AgentEvent::Done {
                 final_text,

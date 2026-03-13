@@ -34,7 +34,7 @@ pub use session::{Session, SessionStore};
 pub use core::errors::{ErrorCategory, SdkError};
 pub use core::events::StreamEvent;
 pub use core::types::{
-    ChatRequest, ChatResponse, Choice, ImageUrl, Message, MessageContent, MessagePart,
+    ChatRequest, ChatResponse, Choice, ImageUrl, InlineImageAttachment, Message, MessageContent, MessagePart,
     ResponseMessageDelta, ResponseStreamError, ResponseStreamResult, Tool, ToolCall,
     ToolCallFunction, ToolChoice, ToolFunction, ToolSchemaFormat, Usage,
 };

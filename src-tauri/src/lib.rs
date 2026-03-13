@@ -6,6 +6,7 @@ mod tracing_setup;
 
 use commands::ai_commands;
 use commands::ai_debug;
+use commands::attachment_commands;
 use commands::file_commands;
 use commands::file_watcher;
 use commands::lsp_commands;
@@ -61,6 +62,8 @@ pub fn run() {
             terminal::write_to_pty,
             terminal::resize_pty,
             terminal::close_pty,
+            // Attachments
+            attachment_commands::prepare_chat_attachments,
             // LSP
             lsp_commands::lsp_set_root,
             lsp_commands::lsp_did_open,

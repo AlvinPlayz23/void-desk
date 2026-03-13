@@ -3,15 +3,18 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useFileSystem } from "@/hooks/useFileSystem";
-import { useChatStore, ToolOperation, Message } from "@/stores/chatStore";
+import { useChatStore, ToolOperation, Message, ChatAttachment } from "@/stores/chatStore";
 
 export interface AIResponseChunk {
     content?: string;
     tool_call?: string;
     tool_operation?: ToolOperation;
     debug?: string;
+    debug_type?: string;
     error?: string;
     error_type?: string;
+    error_status?: number;
+    retryable?: boolean;
     done: boolean;
 }
 
@@ -20,12 +23,128 @@ interface ConversationHistoryMessage {
     content: string;
 }
 
+interface BackendImageAttachment {
+    name: string;
+    mimeType: string;
+    dataUrl: string;
+    detail?: "low";
+    sourceBytes?: number;
+    optimizedBytes?: number;
+}
+
 const serializeConversationHistory = (messages: Message[]): ConversationHistoryMessage[] =>
     messages
         .filter((message): message is Message & { role: "user" | "assistant" } =>
             (message.role === "user" || message.role === "assistant") && message.content.trim().length > 0
         )
         .map((message) => ({ role: message.role, content: message.content }));
+
+const MAX_FRONTEND_API_RETRIES = 10;
+const MAX_INLINE_IMAGE_BYTES = 350 * 1024;
+const MAX_INLINE_IMAGE_DIMENSION = 1280;
+
+const formatAttachmentSummary = (attachments: ChatAttachment[]) => {
+    if (attachments.length === 0) return "none";
+
+    return attachments
+        .map((attachment) => {
+            if (attachment.kind === "text") {
+                return `${attachment.name} [text ${attachment.textContent.length} chars]`;
+            }
+
+            const approxKb = Math.round(attachment.dataUrl.length / 1024);
+            return `${attachment.name} [image ~${approxKb}KB data-url]`;
+        })
+        .join(", ");
+};
+
+const estimateDataUrlBytes = (dataUrl: string) => {
+    const commaIndex = dataUrl.indexOf(",");
+    const base64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
+    const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+};
+
+const extractDataUrlMimeType = (dataUrl: string) => {
+    const match = /^data:([^;]+);base64,/.exec(dataUrl);
+    return match?.[1] || null;
+};
+
+const loadImageElement = (src: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Failed to load image attachment for optimization"));
+        image.src = src;
+    });
+
+const canvasToDataUrl = (canvas: HTMLCanvasElement, mimeType: string, quality?: number) => {
+    try {
+        return quality === undefined ? canvas.toDataURL(mimeType) : canvas.toDataURL(mimeType, quality);
+    } catch {
+        return null;
+    }
+};
+
+const optimizeImageAttachmentForTransport = async (
+    attachment: Extract<ChatAttachment, { kind: "image" }>
+): Promise<BackendImageAttachment> => {
+    const sourceBytes = estimateDataUrlBytes(attachment.dataUrl);
+    const basePayload: BackendImageAttachment = {
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        dataUrl: attachment.dataUrl,
+        detail: sourceBytes > MAX_INLINE_IMAGE_BYTES ? "low" : undefined,
+        sourceBytes,
+        optimizedBytes: sourceBytes,
+    };
+
+    if (sourceBytes <= MAX_INLINE_IMAGE_BYTES) {
+        return basePayload;
+    }
+
+    const image = await loadImageElement(attachment.dataUrl);
+    const longestSide = Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height);
+    const scale = longestSide > MAX_INLINE_IMAGE_DIMENSION ? MAX_INLINE_IMAGE_DIMENSION / longestSide : 1;
+    const targetWidth = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+    const targetHeight = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+        return basePayload;
+    }
+
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    const candidateUrls = [
+        canvasToDataUrl(canvas, "image/webp", 0.82),
+        canvasToDataUrl(canvas, "image/webp", 0.68),
+        canvasToDataUrl(canvas, "image/jpeg", 0.82),
+        canvasToDataUrl(canvas, "image/jpeg", 0.68),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+
+    let bestDataUrl = attachment.dataUrl;
+    let bestBytes = sourceBytes;
+    for (const candidate of candidateUrls) {
+        const candidateBytes = estimateDataUrlBytes(candidate);
+        if (candidateBytes < bestBytes) {
+            bestDataUrl = candidate;
+            bestBytes = candidateBytes;
+        }
+    }
+
+    return {
+        name: attachment.name,
+        mimeType: extractDataUrlMimeType(bestDataUrl) || attachment.mimeType,
+        dataUrl: bestDataUrl,
+        detail: "low",
+        sourceBytes,
+        optimizedBytes: bestBytes,
+    };
+};
 
 export function useAI() {
     const [isStreaming, setIsStreaming] = useState(false);
@@ -43,6 +162,7 @@ export function useAI() {
     const pendingRetryRef = useRef(false);
     const activeRequestRef = useRef(0);
     const activeRunIdRef = useRef<string | null>(null);
+    const currentAttachmentsRef = useRef<ChatAttachment[]>([]);
 
     const stopStreaming = useCallback(() => {
         abortRef.current = true;
@@ -55,8 +175,8 @@ export function useAI() {
     }, []);
 
     const sendMessage = useCallback(
-        async (text: string, isRetry = false) => {
-            if (!text.trim() || isStreaming) return;
+        async (text: string, attachments: ChatAttachment[] = [], isRetry = false) => {
+            if ((!text.trim() && attachments.length === 0) || isStreaming) return;
 
             // Reset abort flag
             abortRef.current = false;
@@ -64,6 +184,7 @@ export function useAI() {
                 retryAttemptsRef.current = 0;
             }
             currentMessageRef.current = text;
+            currentAttachmentsRef.current = attachments;
             pendingRetryRef.current = false;
             const currentSessionMessages = useChatStore.getState().currentMessages();
             const lastSessionMessage = currentSessionMessages[currentSessionMessages.length - 1];
@@ -75,15 +196,38 @@ export function useAI() {
             activeRequestRef.current = requestId;
             const runId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
             activeRunIdRef.current = runId;
+            let firstContentChunkSeen = false;
+
+            const imageAttachmentCount = attachments.filter((attachment) => attachment.kind === "image").length;
+            const textAttachmentCount = attachments.length - imageAttachmentCount;
+            const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+            const activeModel = aiModels.find((model) => model.id === activeModelId);
+            const activeModelSupportsImages = activeModel?.supportsImages ?? false;
+            const attachmentPreparedModelIds = [...new Set(attachments.map((attachment) => attachment.preparedForModelId).filter(Boolean))];
+
+            if (imageAttachmentCount > 0 && !activeModelSupportsImages) {
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "error",
+                    message: `Send blocked before backend invoke: model ${activeModelId} is not marked as vision-enabled, but ${imageAttachmentCount} image attachment(s) were queued${attachmentPreparedModelIds.length > 0 ? ` (prepared under ${attachmentPreparedModelIds.join(", ")})` : ""}`,
+                });
+                return;
+            }
 
             addDebugLog({
                 timestamp: Date.now(),
-                type: "info",
-                message: isRetry ? "Retrying message" : "Sending message",
+                type: "send",
+                message: `${isRetry ? "Retrying" : "Sending"} request ${runId}: prompt=${text.length} chars, history=${historyMessages.length}, attachments=${attachments.length} (${textAttachmentCount} text, ${imageAttachmentCount} image)`,
             });
 
             if (!isRetry) {
-                const userMessage: Message = { role: "user", content: text, parts: [{ type: "text", text }], timestamp: Date.now() };
+                const userMessage: Message = {
+                    role: "user",
+                    content: text,
+                    parts: text ? [{ type: "text", text }] : [],
+                    attachments: attachments.length > 0 ? attachments : undefined,
+                    timestamp: Date.now(),
+                };
                 addMessage(userMessage);
             }
 
@@ -103,6 +247,12 @@ export function useAI() {
             let contextContent = "";
 
             if (contextPaths.length > 0) {
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "attachment",
+                    message: `Loading ${contextPaths.length} @-mentioned context file(s) for request ${runId}`,
+                });
+
                 const contextParts: string[] = [];
                 for (const path of contextPaths) {
                     try {
@@ -115,14 +265,82 @@ export function useAI() {
                 }
                 if (contextParts.length > 0) {
                     contextContent = "\n\n[Attached Context Files]\n" + contextParts.join("\n\n");
+                    addDebugLog({
+                        timestamp: Date.now(),
+                        type: "attachment",
+                        message: `Loaded ${contextParts.length} context file(s) for request ${runId}`,
+                    });
                 }
                 // Clear context paths after use
                 useChatStore.getState().clearContextPaths();
             }
 
+            // Process attachments
+            const imageAttachments: BackendImageAttachment[] = [];
+            const imageOptimizationSummaries: string[] = [];
+            for (const att of attachments) {
+                if (att.kind === "text") {
+                    contextContent += `\n\n--- Attached file: ${att.name} ---\n${att.textContent}`;
+                } else if (att.kind === "image") {
+                    try {
+                        const payload = await optimizeImageAttachmentForTransport(att);
+                        imageAttachments.push(payload);
+
+                        if ((payload.optimizedBytes || 0) < (payload.sourceBytes || 0)) {
+                            imageOptimizationSummaries.push(
+                                `${att.name}: ${Math.round((payload.sourceBytes || 0) / 1024)}KB → ${Math.round((payload.optimizedBytes || 0) / 1024)}KB`
+                            );
+                        }
+                    } catch (error) {
+                        addDebugLog({
+                            timestamp: Date.now(),
+                            type: "warn",
+                            message: `Image optimization failed for ${att.name}; using original payload (${String(error)})`,
+                        });
+                        imageAttachments.push({
+                            name: att.name,
+                            mimeType: att.mimeType,
+                            dataUrl: att.dataUrl,
+                            detail: "low",
+                            sourceBytes: estimateDataUrlBytes(att.dataUrl),
+                            optimizedBytes: estimateDataUrlBytes(att.dataUrl),
+                        });
+                    }
+                }
+            }
+
+            if (imageOptimizationSummaries.length > 0) {
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "attachment",
+                    message: `Optimized image payloads for request ${runId}: ${imageOptimizationSummaries.join(", ")}`,
+                });
+            }
+
+            if (attachments.length > 0) {
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "attachment",
+                    message: `Prepared attachments for request ${runId}: ${formatAttachmentSummary(attachments)}`,
+                });
+            }
+
             // Combine user message with context
             const fullMessage = text + contextContent;
-            const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+
+            if (imageAttachmentCount > 0 && attachmentPreparedModelIds.length > 0 && !attachmentPreparedModelIds.includes(activeModelId)) {
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "warn",
+                    message: `Request ${runId} is sending image attachment(s) with model ${activeModelId}, but they were prepared while ${attachmentPreparedModelIds.join(", ")} was selected`,
+                });
+            }
+
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "backend",
+                message: `Invoking backend for request ${runId}: model=${activeModelId}, payload=${fullMessage.length} chars, inlineImages=${imageAttachments.length}, imageBytes=${imageAttachments.reduce((sum, attachment) => sum + (attachment.optimizedBytes || 0), 0)}, rawStream=${rawStreamLoggingEnabled ? "on" : "off"}`,
+            });
 
             try {
                 const onEvent = new Channel<AIResponseChunk>();
@@ -135,7 +353,40 @@ export function useAI() {
                     }
 
                     if (chunk.error) {
-                        abortRef.current = true;
+                        const errorStatusLabel = chunk.error_status ? ` status=${chunk.error_status}` : "";
+                        const retryableLabel = chunk.retryable ? " retryable" : "";
+                        const canAutoRetry = Boolean(chunk.retryable)
+                            && retryAttemptsRef.current < MAX_FRONTEND_API_RETRIES
+                            && !pendingRetryRef.current
+                            && activeRequestRef.current === requestId;
+
+                        addDebugLog({
+                            timestamp: Date.now(),
+                            type: "error",
+                            message: `Request ${runId} failed (${chunk.error_type ?? "unknown"}${errorStatusLabel}${retryableLabel}): ${chunk.error}`,
+                        });
+
+                        if (canAutoRetry) {
+                            retryAttemptsRef.current += 1;
+                            pendingRetryRef.current = true;
+                            setIsStreaming(false);
+                            activeRunIdRef.current = null;
+
+                            addDebugLog({
+                                timestamp: Date.now(),
+                                type: "retry",
+                                message: `Scheduling auto-retry ${retryAttemptsRef.current}/${MAX_FRONTEND_API_RETRIES} for request ${runId}${errorStatusLabel || retryableLabel ? ` (${[errorStatusLabel.trim(), retryableLabel.trim()].filter(Boolean).join(", ")})` : ""}`,
+                            });
+
+                            const retryDelayMs = Math.min(1000 * retryAttemptsRef.current, 4000);
+                            setTimeout(() => {
+                                if (abortRef.current || activeRequestRef.current !== requestId) return;
+                                useChatStore.getState().removeLastMessage();
+                                sendMessage(currentMessageRef.current, currentAttachmentsRef.current, true);
+                            }, retryDelayMs);
+                            return;
+                        }
+
                         const current = useChatStore.getState().currentMessages();
                         const lastMessage = current[current.length - 1];
                         const existingContent = lastMessage?.content || "";
@@ -144,52 +395,30 @@ export function useAI() {
                             content: existingContent + "\n\n" + errorLabel + chunk.error,
                         });
 
-                        addDebugLog({
-                            timestamp: Date.now(),
-                            type: "error",
-                            message: chunk.error_type ? `${chunk.error_type}: ${chunk.error}` : chunk.error,
-                        });
-
-                        const isRateLimitError = chunk.error.includes("Invalid status code: 429");
-                        const isUnprocessableEntity = chunk.error.includes("Invalid status code: 422");
-                        if (
-                            isRateLimitError &&
-                            retryAttemptsRef.current < 1 &&
-                            !pendingRetryRef.current &&
-                            !abortRef.current
-                        ) {
-                            retryAttemptsRef.current += 1;
-                            pendingRetryRef.current = true;
-                            addDebugLog({
-                                timestamp: Date.now(),
-                                type: "retry",
-                                message: "Auto-retrying after 429 rate limit",
-                            });
-                            setIsStreaming(false);
-                            setTimeout(() => {
-                                if (abortRef.current || activeRequestRef.current !== requestId) return;
-                                useChatStore.getState().removeLastMessage();
-                                activeRunIdRef.current = null;
-                                sendMessage(currentMessageRef.current, true);
-                            }, 1200);
-                        } else if (isUnprocessableEntity) {
+                        if (chunk.error_status === 422) {
                             addDebugLog({
                                 timestamp: Date.now(),
                                 type: "error",
-                                message: "Request rejected with 422. Try again or reduce context size.",
+                                message: "Request rejected with 422. Try again or reduce context size / attachment size.",
                             });
-                            setIsStreaming(false);
-                            pendingRetryRef.current = false;
-                            activeRunIdRef.current = null;
-                        } else {
-                            setIsStreaming(false);
-                            pendingRetryRef.current = false;
-                            activeRunIdRef.current = null;
                         }
+
+                        setIsStreaming(false);
+                        abortRef.current = false;
+                        pendingRetryRef.current = false;
+                        activeRunIdRef.current = null;
                         return;
                     }
 
                     if (chunk.content) {
+                        if (!firstContentChunkSeen) {
+                            firstContentChunkSeen = true;
+                            addDebugLog({
+                                timestamp: Date.now(),
+                                type: "stream",
+                                message: `First assistant text chunk received for request ${runId}`,
+                            });
+                        }
                         appendToLastMessage(chunk.content);
                     }
 
@@ -228,7 +457,7 @@ export function useAI() {
                     if (chunk.debug) {
                         addDebugLog({
                             timestamp: Date.now(),
-                            type: "raw",
+                            type: chunk.debug_type || "raw",
                             message: chunk.debug,
                         });
                     }
@@ -238,11 +467,12 @@ export function useAI() {
                         abortRef.current = false;
                         pendingRetryRef.current = false;
                         activeRunIdRef.current = null;
+                        retryAttemptsRef.current = 0;
 
                         addDebugLog({
                             timestamp: Date.now(),
-                            type: "info",
-                            message: "Stream complete",
+                            type: "success",
+                            message: `Request ${runId} stream complete`,
                         });
                     }
                 };
@@ -256,10 +486,17 @@ export function useAI() {
                     baseUrl: openAIBaseUrl,
                     modelId: activeModelId,
                     contextWindowTokens: chatContextWindow,
+                    imageAttachments: imageAttachments.length > 0 ? imageAttachments : null,
                     activePath: rootPath,
                     debugRawStream: rawStreamLoggingEnabled,
                     requestId: runId,
                     onEvent,
+                });
+
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "backend",
+                    message: `Backend invocation accepted for request ${runId}`,
                 });
             } catch (error) {
                 console.error("AI Error:", error);
@@ -269,10 +506,11 @@ export function useAI() {
                 addDebugLog({
                     timestamp: Date.now(),
                     type: "error",
-                    message: `AI Error: ${String(error)}`,
+                    message: `Backend invocation failed before streaming for request ${runId}: ${String(error)}`,
                 });
                 setIsStreaming(false);
                 abortRef.current = false;
+                pendingRetryRef.current = false;
                 activeRunIdRef.current = null;
             }
         },
@@ -306,6 +544,7 @@ export function useAI() {
 
         const actualIdx = currentMessages.length - 1 - lastUserMsgIdx;
         const lastUserContent = currentMessages[actualIdx].content;
+        const lastUserAttachments = currentMessages[actualIdx].attachments || [];
 
         retryAttemptsRef.current = 0;
         pendingRetryRef.current = false;
@@ -325,7 +564,7 @@ export function useAI() {
         keptMessages.forEach((msg) => useChatStore.getState().addMessage(msg));
 
         // Re-send
-        await sendMessage(lastUserContent, true);
+        await sendMessage(lastUserContent, lastUserAttachments, true);
     }, [addDebugLog, isStreaming, sendMessage]);
 
     return {

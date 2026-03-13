@@ -77,7 +77,8 @@ impl HttpTransport {
     /// Send a POST request and return raw text response
     pub async fn post_text(&self, endpoint: &str, body: &str) -> Result<String> {
         let url = format!("{}/{}", self.base_url, endpoint);
-        self.retry_request(
+        tracing::info!("post_text: sending request to {} (body_len={} bytes)", url, body.len());
+        let result = self.retry_request(
             || async {
                 let response = self
                     .client
@@ -93,7 +94,9 @@ impl HttpTransport {
             },
             "post_text",
         )
-        .await
+        .await;
+        tracing::info!("post_text: request completed, success={}", result.is_ok());
+        result
     }
 
     /// Send a POST request and return a byte stream for SSE
@@ -194,13 +197,17 @@ fn map_reqwest_error(err: reqwest::Error) -> Error {
 
 async fn parse_non_stream_response(response: reqwest::Response) -> Result<String> {
     let status: StatusCode = response.status();
+    tracing::info!("parse_non_stream_response: status={}", status);
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
+        tracing::error!("parse_non_stream_response: error response body={}", &error_text[..error_text.len().min(500)]);
         return Err(Error::new(
             SdkError::from_status(status, format!("API error ({}): {}", status, error_text))
                 .with_code("http_error"),
         ));
     }
 
-    response.text().await.map_err(map_reqwest_error)
+    let text = response.text().await.map_err(map_reqwest_error)?;
+    tracing::info!("parse_non_stream_response: success, response_len={}", text.len());
+    Ok(text)
 }

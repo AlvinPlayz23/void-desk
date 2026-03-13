@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Loader2, Sparkles, Trash2, Settings2, StopCircle, Activity, X, File as FileIcon, Plus, ChevronDown, Bug, FileText, CornerDownLeft, RefreshCcw } from "lucide-react";
+import { Loader2, Sparkles, Trash2, Settings2, StopCircle, X, File as FileIcon, Plus, ChevronDown, Bug, CornerDownLeft, RefreshCcw, Paperclip } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
-import { ChatSession, Message, ToolOperation, useChatStore } from "@/stores/chatStore";
+import { ChatAttachment, ChatSession, Message, ToolOperation, useChatStore } from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -26,10 +27,12 @@ export function AIChat() {
     const [sessionSearch, setSessionSearch] = useState("");
     const [showDebug, setShowDebug] = useState(false);
     const [showModelMenu, setShowModelMenu] = useState(false);
+    const [draftAttachments, setDraftAttachments] = useState<ChatAttachment[]>([]);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const { fileTree } = useFileStore();
     const storedSessions = useChatStore((state) => state.sessions);
     const clearDebugLogs = useChatStore((state) => state.clearDebugLogs);
+    const addDebugLog = useChatStore((state) => state.addDebugLog);
     const aiModels = useSettingsStore((state) => state.aiModels);
     const selectedModelId = useSettingsStore((state) => state.selectedModelId);
     const setSelectedModelId = useSettingsStore((state) => state.setSelectedModelId);
@@ -123,11 +126,137 @@ export function AIChat() {
         }
     }, [messages]);
 
+    const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+    const activeModelName =
+        aiModels.find((model) => model.id === activeModelId)?.name || activeModelId || "Model";
+    const activeModel = aiModels.find((m) => m.id === activeModelId);
+    const supportsImages = activeModel?.supportsImages ?? false;
+    const summarizeAttachments = (attachments: ChatAttachment[]) =>
+        attachments
+            .map((attachment) => attachment.kind === "text"
+                ? `${attachment.name} [text ${attachment.textContent.length} chars]`
+                : `${attachment.name} [image ~${Math.round(attachment.dataUrl.length / 1024)}KB data-url]`
+            )
+            .join(", ");
+
+    const handleAddAttachment = async () => {
+        try {
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "attachment",
+                message: `Opening attachment picker for model ${activeModelId} (${supportsImages ? "vision-enabled" : "text-only"})`,
+            });
+
+            const filters = supportsImages
+                ? [
+                    { name: "All Supported", extensions: ["txt", "md", "json", "ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "c", "cpp", "h", "css", "html", "xml", "yaml", "yml", "toml", "sh", "sql", "png", "jpg", "jpeg", "gif", "webp"] },
+                    { name: "Text Files", extensions: ["txt", "md", "json", "ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "c", "cpp", "h", "css", "html", "xml", "yaml", "yml", "toml", "sh", "sql"] },
+                    { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] },
+                ]
+                : [
+                    { name: "Text Files", extensions: ["txt", "md", "json", "ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "c", "cpp", "h", "css", "html", "xml", "yaml", "yml", "toml", "sh", "sql"] },
+                ];
+
+            const selected = await open({ multiple: true, filters });
+            if (!selected) {
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "attachment",
+                    message: "Attachment picker cancelled",
+                });
+                return;
+            }
+
+            const paths = Array.isArray(selected) ? selected : [selected];
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "attachment",
+                message: `Preparing ${paths.length} attachment(s): ${paths.map((path) => path.split(/[/\\]/).pop() || path).join(", ")}`,
+            });
+
+            const prepared = (await invoke<ChatAttachment[]>("prepare_chat_attachments", { paths })).map((attachment) => ({
+                ...attachment,
+                preparedForModelId: activeModelId,
+            }));
+
+            // Reject images if model doesn't support them
+            const filtered = supportsImages
+                ? prepared
+                : prepared.filter((a) => a.kind !== "image");
+
+            const rejectedCount = prepared.length - filtered.length;
+            if (rejectedCount > 0) {
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "warn",
+                    message: `Skipped ${rejectedCount} image attachment(s) because model ${activeModelId} does not support images`,
+                });
+            }
+
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "attachment",
+                message: filtered.length > 0
+                    ? `Added ${filtered.length} draft attachment(s): ${summarizeAttachments(filtered)}`
+                    : "No supported attachments were added",
+            });
+
+            setDraftAttachments((prev) => [...prev, ...filtered]);
+        } catch (err) {
+            console.error("Failed to add attachment:", err);
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "error",
+                message: `Failed to prepare attachment(s): ${String(err)}`,
+            });
+        }
+    };
+
+    const removeAttachment = (id: string) => {
+        const removed = draftAttachments.find((attachment) => attachment.id === id);
+        if (removed) {
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "attachment",
+                message: `Removed draft attachment ${removed.name}`,
+            });
+        }
+        setDraftAttachments((prev) => prev.filter((a) => a.id !== id));
+    };
+
     const handleSend = async () => {
-        if (!input.trim() || isStreaming) return;
+        if ((!input.trim() && draftAttachments.length === 0) || isStreaming) return;
         const text = input;
+        const atts = [...draftAttachments];
+        const imageAttachments = atts.filter((attachment) => attachment.kind === "image");
+        const preparedModelIds = [...new Set(atts.map((attachment) => attachment.preparedForModelId).filter(Boolean))];
+
+        addDebugLog({
+            timestamp: Date.now(),
+            type: "send",
+            message: `Composer send triggered: model=${activeModelId}, prompt=${text.length} chars, draftAttachments=${atts.length}${atts.length > 0 ? ` (${summarizeAttachments(atts)})` : ""}`,
+        });
+
+        if (imageAttachments.length > 0 && !supportsImages) {
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "error",
+                message: `Blocked send: model ${activeModelId} is not marked as vision-enabled, but ${imageAttachments.length} image attachment(s) are queued${preparedModelIds.length > 0 ? ` (prepared under ${preparedModelIds.join(", ")})` : ""}`,
+            });
+            return;
+        }
+
+        if (imageAttachments.length > 0 && preparedModelIds.length > 0 && !preparedModelIds.includes(activeModelId)) {
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "warn",
+                message: `Sending image attachment(s) with model ${activeModelId}, but they were prepared while ${preparedModelIds.join(", ")} was selected`,
+            });
+        }
+
         setInput("");
-        await sendMessage(text);
+        setDraftAttachments([]);
+        await sendMessage(text, atts);
     };
 
     const handleStop = () => stopStreaming();
@@ -156,26 +285,23 @@ export function AIChat() {
     };
 
     const currentSessionName = currentSession?.name || "Chat";
-    const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
-    const activeModelName =
-        aiModels.find((model) => model.id === activeModelId)?.name || activeModelId || "Model";
     const hasMessages = messages.length > 0;
 
     return (
-        <div className="flex flex-col h-full bg-[var(--color-surface-base)]">
+        <div className="flex flex-col h-full bg-[var(--color-surface-base)] font-sans selection:bg-[var(--color-accent-primary)]/20 selection:text-[var(--color-text-primary)]">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border-subtle)]">
                 <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-gray-500" />
+                    <Sparkles className="w-4 h-4 text-[var(--color-text-muted)]" />
                     <div className="relative" ref={sessionsRef}>
                         <button
                             onClick={() => setShowSessions(!showSessions)}
-                            className="flex items-center gap-1.5 bg-[#1c1c24] px-2.5 py-1 rounded-full border border-white/5 hover:border-white/10 transition-colors"
+                            className="flex items-center gap-1.5 bg-[var(--color-surface-overlay)] px-2.5 py-1 rounded-full border border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] transition-colors"
                             title="Sessions"
                         >
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            <span className="text-[11px] font-medium text-gray-300">{currentSessionName}</span>
-                            <ChevronDown className={`w-3 h-3 text-gray-500 transition-transform ${showSessions ? "rotate-180" : ""}`} />
+                            <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent-success)]" />
+                            <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">{currentSessionName}</span>
+                            <ChevronDown className={`w-3 h-3 text-[var(--color-text-muted)] transition-transform ${showSessions ? "rotate-180" : ""}`} />
                         </button>
                         {showSessions && (
                             <div className="absolute right-0 top-full mt-2 w-48 max-h-96 overflow-y-auto bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg shadow-xl z-50">
@@ -204,53 +330,53 @@ export function AIChat() {
                                         return session.messages.some((m) => m.content.toLowerCase().includes(q));
                                     })
                                     .map((session) => (
-                                    <div
-                                        key={session.id}
-                                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] group ${activeSessionId === session.id ? "bg-[var(--color-void-700)] text-[var(--color-accent-primary)]" : ""}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => { switchSession(session.id); setShowSessions(false); }}
-                                        onKeyDown={(event) => {
-                                            if (event.key === "Enter" || event.key === " ") {
-                                                switchSession(session.id);
-                                                setShowSessions(false);
-                                            }
-                                        }}
-                                    >
-                                        <div className="flex-1 truncate">
-                                            <div className="truncate font-medium">{session.name}</div>
-                                            <div className="text-[9px] opacity-30">{new Date(session.createdAt).toLocaleDateString()}</div>
-                                        </div>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id); }}
-                                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
-                                            type="button"
+                                        <div
+                                            key={session.id}
+                                            className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] group ${activeSessionId === session.id ? "bg-[var(--color-void-700)] text-[var(--color-accent-primary)]" : ""}`}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => { switchSession(session.id); setShowSessions(false); }}
+                                            onKeyDown={(event) => {
+                                                if (event.key === "Enter" || event.key === " ") {
+                                                    switchSession(session.id);
+                                                    setShowSessions(false);
+                                                }
+                                            }}
                                         >
-                                            <Trash2 className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
+                                            <div className="flex-1 truncate">
+                                                <div className="truncate font-medium">{session.name}</div>
+                                                <div className="text-[9px] opacity-30">{new Date(session.createdAt).toLocaleDateString()}</div>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id); }}
+                                                className="opacity-0 group-hover:opacity-100 p-1 hover:text-[var(--color-accent-error)] transition-opacity"
+                                                type="button"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
                             </div>
                         )}
                     </div>
                 </div>
-                <div className="flex items-center gap-2 text-gray-500">
+                <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
                     <button
                         onClick={() => setShowDebug(!showDebug)}
-                        className={`hover:text-gray-300 transition-colors ${showDebug ? "text-emerald-500" : ""}`}
+                        className={`hover:text-[var(--color-text-secondary)] transition-colors ${showDebug ? "text-[var(--color-accent-success)]" : ""}`}
                         title="AI Debug"
                     >
                         <Bug className="w-4 h-4" />
                     </button>
-                    <button onClick={handleNewSession} className="hover:text-gray-300 transition-colors" title="New Chat">
+                    <button onClick={handleNewSession} className="hover:text-[var(--color-text-secondary)] transition-colors" title="New Chat">
                         <Plus className="w-4 h-4" />
                     </button>
                     {messages.length > 0 && (
-                        <button onClick={() => window.confirm("Clear history?") && clearChat()} className="hover:text-gray-300 transition-colors" title="Clear">
+                        <button onClick={() => window.confirm("Clear history?") && clearChat()} className="hover:text-[var(--color-text-secondary)] transition-colors" title="Clear">
                             <Trash2 className="w-3.5 h-3.5" />
                         </button>
                     )}
-                    <button onClick={() => openSettingsPage("ai")} className="hover:text-gray-300 transition-colors" title="AI Settings">
+                    <button onClick={() => openSettingsPage("ai")} className="hover:text-[var(--color-text-secondary)] transition-colors" title="AI Settings">
                         <Settings2 className="w-4 h-4" />
                     </button>
                 </div>
@@ -259,7 +385,7 @@ export function AIChat() {
             {/* Content area */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 {showDebug && (
-                    <div className="p-4 border-b border-white/5">
+                    <div className="p-4 border-b border-[var(--color-border-subtle)]">
                         <DebugPanel debugLogs={debugLogs} clearDebugLogs={clearDebugLogs} />
                     </div>
                 )}
@@ -284,39 +410,22 @@ export function AIChat() {
                             filteredFiles={filteredFiles}
                             handleSelectFile={handleSelectFile}
                             dockedBottom={false}
+                            draftAttachments={draftAttachments}
+                            handleAddAttachment={handleAddAttachment}
+                            removeAttachment={removeAttachment}
+                            supportsImages={supportsImages}
                         />
 
                         {/* Empty state center - matching mock glow pattern */}
                         <div className="flex-1 flex flex-col items-center justify-center -mt-6">
-                            <div className="relative w-32 h-32 flex items-center justify-center mb-8">
-                                <div className="absolute inset-0 opacity-60" style={{
-                                    backgroundImage: "radial-gradient(circle, #10b981 1px, transparent 1px)",
-                                    backgroundSize: "6px 6px",
-                                    maskImage: "radial-gradient(circle, black, transparent 80%)",
-                                    WebkitMaskImage: "radial-gradient(circle, black, transparent 80%)",
-                                }} />
-                                <div className="w-16 h-16 rounded-full border border-emerald-500/10 flex items-center justify-center">
-                                    <div className="w-10 h-10 rounded-full bg-emerald-500/5 flex items-center justify-center border border-emerald-500/10">
-                                        <div className="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col items-center gap-3 text-gray-500">
-                                <div className="flex items-center gap-2">
-                                    <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-gray-400">@</span>
-                                    <span className="text-[12px]">to add files</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-gray-400">@@</span>
-                                    <span className="text-[12px]">to mention threads</span>
-                                </div>
-                                <div className="flex items-center gap-2 pt-4">
-                                    <span className="text-[10px] uppercase tracking-widest text-gray-600 font-medium">Command Palette</span>
-                                    <div className="flex gap-1">
-                                        <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-gray-400">Ctrl</span>
-                                        <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-gray-400">Shift</span>
-                                        <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-gray-400">P</span>
+                            <div className="text-center space-y-6">
+                                <h1 className="text-5xl font-black tracking-tighter uppercase" style={{ WebkitTextStroke: '1px rgba(255,255,255,0.1)', color: 'transparent' }}>
+                                    Void<span className="text-[var(--color-accent-primary)]" style={{ WebkitTextStroke: '0' }}>.</span>
+                                </h1>
+                                <div className="flex flex-col gap-2 pt-4">
+                                    <div className="flex items-center justify-center gap-2 text-[var(--color-text-muted)] text-xs font-mono uppercase tracking-widest">
+                                        <span className="px-1.5 py-0.5 bg-[var(--color-accent-primary)]/10 text-[var(--color-accent-primary)] border border-[var(--color-accent-primary)]/20 rounded-sm">@</span>
+                                        <span>Add Context Files</span>
                                     </div>
                                 </div>
                             </div>
@@ -339,20 +448,20 @@ export function AIChat() {
                                 messages[messages.length - 1].content.includes("Invalid status code: 429") ||
                                 messages[messages.length - 1].content.includes("Invalid status code: 422")
                             ) && (
-                                <div className="flex items-center gap-2 px-2">
-                                    <button
-                                        onClick={retryLastMessage}
-                                        className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-emerald-500 hover:text-emerald-400 transition-colors"
-                                    >
-                                        <RefreshCcw className="w-3 h-3" />
-                                        Retry
-                                    </button>
-                                </div>
-                            )}
+                                    <div className="flex items-center gap-2 px-2">
+                                        <button
+                                            onClick={retryLastMessage}
+                                            className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-[var(--color-accent-success)] hover:text-[var(--color-accent-success)]/80 transition-colors"
+                                        >
+                                            <RefreshCcw className="w-3 h-3" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                )}
                         </div>
 
                         {/* Bottom prompt */}
-                        <div className="border-t border-white/5">
+                        <div className="border-t border-[var(--color-border-subtle)]">
                             <ContextPills />
                             <PromptComposer
                                 input={input}
@@ -372,6 +481,10 @@ export function AIChat() {
                                 filteredFiles={filteredFiles}
                                 handleSelectFile={handleSelectFile}
                                 dockedBottom={true}
+                                draftAttachments={draftAttachments}
+                                handleAddAttachment={handleAddAttachment}
+                                removeAttachment={removeAttachment}
+                                supportsImages={supportsImages}
                             />
                         </div>
                     </>
@@ -387,17 +500,35 @@ function MessageBubble({ message }: { message: Message }) {
 
     if (isUser) {
         return (
-            <div className="flex flex-col items-end">
-                <div className="max-w-[88%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[13px] leading-relaxed bg-emerald-500/15 border border-emerald-500/20 text-gray-200">
+            <div className="flex flex-col items-end w-full mb-6">
+                <div className="max-w-[85%] text-[14px] leading-relaxed text-[var(--color-text-primary)] font-medium px-5 py-4 bg-[var(--color-surface-overlay)] border border-[var(--color-border-default)]">
                     <MarkdownContent content={message.content} />
+                    {message.attachments && message.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                            {message.attachments.map((att) => (
+                                <div key={att.id}>
+                                    {att.kind === "image" ? (
+                                        <div className="w-20 h-20 rounded-lg overflow-hidden border border-white/10">
+                                            <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 text-[9px] text-gray-300">
+                                            <FileIcon className="w-2.5 h-2.5" />
+                                            <span className="truncate max-w-[80px]">{att.name}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col items-start">
-            <div className="max-w-[95%] text-[13px] leading-relaxed text-gray-300 space-y-2">
+        <div className="flex flex-col items-start w-full mb-8">
+            <div className="max-w-[95%] text-[14px] leading-relaxed text-[var(--color-text-secondary)] space-y-4">
                 {parts.map((part, i) => {
                     if (part.type === "text") {
                         return part.text ? <MarkdownContent key={i} content={part.text} /> : null;
@@ -423,7 +554,7 @@ interface PromptComposerProps {
     isStreaming: boolean;
     activeModelName: string;
     activeModelId: string;
-    aiModels: { id: string; name?: string }[];
+    aiModels: { id: string; name?: string; supportsImages?: boolean }[];
     showModelMenu: boolean;
     setShowModelMenu: (show: boolean) => void;
     modelMenuRef: React.RefObject<HTMLDivElement | null>;
@@ -432,6 +563,10 @@ interface PromptComposerProps {
     filteredFiles: string[];
     handleSelectFile: (path: string) => void;
     dockedBottom: boolean;
+    draftAttachments: ChatAttachment[];
+    handleAddAttachment: () => void;
+    removeAttachment: (id: string) => void;
+    supportsImages: boolean;
 }
 
 function PromptComposer(props: PromptComposerProps) {
@@ -453,33 +588,72 @@ function PromptComposer(props: PromptComposerProps) {
         filteredFiles,
         handleSelectFile,
         dockedBottom,
+        draftAttachments,
+        handleAddAttachment,
+        removeAttachment,
     } = props;
 
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Auto-resize textarea on input
+    useEffect(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.style.height = "auto";
+        ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+    }, [input]);
+
     return (
-        <div className={`relative ${dockedBottom ? "mx-3 mb-3 mt-2" : "mt-2"}`}>
-            <div className="bg-[#16161e] border border-white/5 rounded-xl relative">
+        <div className={`relative ${dockedBottom ? "mx-4 mb-4 mt-2" : "mt-2"}`}>
+            <div className="bg-[var(--color-surface-elevated)] border border-[var(--color-border-default)] relative shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-all focus-within:shadow-[0_0_10px_rgba(99,102,241,0.15),0_0_0_1px_rgba(99,102,241,0.3)] focus-within:border-[var(--color-accent-primary)] rounded-xl">
                 {showFileSearch && (
-                    <div className={`absolute left-0 w-full max-h-64 overflow-y-auto bg-[#16161e] border border-white/5 shadow-[0_10px_30px_rgba(0,0,0,0.6)] rounded-lg z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
+                    <div className={`absolute left-0 w-full max-h-64 overflow-y-auto bg-[var(--color-surface-overlay)] border border-[var(--color-border-subtle)] shadow-[0_10px_30px_rgba(0,0,0,0.6)] rounded-xl z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
                         {filteredFiles.length > 0 ? filteredFiles.map(file => (
                             <button
                                 key={file}
                                 onClick={() => handleSelectFile(file)}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-white/5 transition-colors flex items-center gap-2.5 border-b border-white/5 last:border-b-0"
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-white/5 transition-colors flex items-center gap-2.5 border-b border-[var(--color-border-subtle)] last:border-b-0"
                             >
-                                <FileIcon className="w-3.5 h-3.5 text-gray-500" />
+                                <FileIcon className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
                                 <div className="flex flex-col truncate">
-                                    <span className="font-medium text-gray-300">{file.split(/[/\\]/).pop()}</span>
-                                    <span className="text-[9px] text-gray-600 truncate">{file}</span>
+                                    <span className="font-medium text-[var(--color-text-secondary)]">{file.split(/[/\\]/).pop()}</span>
+                                    <span className="text-[9px] text-[var(--color-text-muted)] truncate">{file}</span>
                                 </div>
                             </button>
                         )) : (
-                            <div className="px-3 py-3 text-[10px] text-gray-600 uppercase tracking-widest">No matching files</div>
+                            <div className="px-3 py-3 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest">No matching files</div>
                         )}
                     </div>
                 )}
 
-                <div className="px-3 pt-3 pb-1">
+                {draftAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 px-3 pt-3 pb-1">
+                        {draftAttachments.map((att) => (
+                            <div key={att.id} className="relative group">
+                                {att.kind === "image" ? (
+                                    <div className="w-16 h-16 rounded-lg overflow-hidden border border-white/10">
+                                        <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 border border-white/5 text-[10px] text-gray-400">
+                                        <FileIcon className="w-3 h-3" />
+                                        <span className="truncate max-w-[100px]">{att.name}</span>
+                                    </div>
+                                )}
+                                <button
+                                    onClick={() => removeAttachment(att.id)}
+                                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <X className="w-2.5 h-2.5 text-white" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div className="px-4 pt-3 pb-1">
                     <textarea
+                        ref={textareaRef}
                         value={input}
                         onChange={handleInputChange}
                         onKeyDown={(e) => {
@@ -490,14 +664,22 @@ function PromptComposer(props: PromptComposerProps) {
                             if (e.key === "Escape") setShowFileSearch(false);
                         }}
                         placeholder="Ask anything..."
-                        rows={2}
-                        className="w-full bg-transparent text-[14px] text-gray-300 placeholder:text-gray-600 resize-none focus:outline-none min-h-[2.5rem] max-h-[8rem] leading-relaxed"
+                        rows={1}
+                        className="w-full bg-transparent text-[14px] text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-0 focus:shadow-none leading-relaxed overflow-hidden"
+                        style={{ minHeight: "1.75rem", maxHeight: "200px", outline: "none", boxShadow: "none" }}
                     />
                 </div>
 
-                <div className="flex items-center justify-between px-3 pb-2.5 pt-0.5 select-none">
-                    <div className="flex items-center gap-2 text-gray-500 text-[10px]">
-                        <div className="p-0.5 bg-white/5 rounded border border-white/5">
+                <div className="flex items-center justify-between px-4 pb-2.5 pt-0.5 select-none">
+                    <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-[10px]">
+                        <button
+                            onClick={handleAddAttachment}
+                            className="p-1 hover:text-[var(--color-text-secondary)] hover:bg-white/5 rounded transition-colors"
+                            title="Attach file"
+                        >
+                            <Paperclip className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="p-0.5 bg-[var(--color-surface-overlay)] rounded border border-[var(--color-border-subtle)]">
                             <CornerDownLeft className="w-3 h-3" />
                         </div>
                         <span>to send</span>
@@ -506,7 +688,7 @@ function PromptComposer(props: PromptComposerProps) {
                     <div className="flex items-center gap-2" ref={modelMenuRef as React.RefObject<HTMLDivElement>}>
                         <button
                             onClick={() => setShowModelMenu(!showModelMenu)}
-                            className="text-[9px] font-bold text-gray-600 tracking-tighter uppercase hover:text-gray-400 transition-colors cursor-pointer"
+                            className="text-[9px] font-bold text-[var(--color-text-muted)] tracking-tighter uppercase hover:text-[var(--color-text-tertiary)] transition-colors cursor-pointer"
                             title="Select model"
                             disabled={aiModels.length === 0}
                         >
@@ -515,7 +697,7 @@ function PromptComposer(props: PromptComposerProps) {
                         {isStreaming ? (
                             <button
                                 onClick={handleStop}
-                                className="flex items-center gap-1 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 text-red-400 text-[9px] hover:bg-red-500/20 transition-colors"
+                                className="flex items-center gap-1 bg-[var(--color-accent-error)]/10 px-2 py-0.5 rounded border border-[var(--color-accent-error)]/20 text-[var(--color-accent-error)] text-[9px] hover:bg-[var(--color-accent-error)]/20 transition-colors"
                             >
                                 <StopCircle className="w-2.5 h-2.5" />
                                 <span>Stop</span>
@@ -523,14 +705,14 @@ function PromptComposer(props: PromptComposerProps) {
                         ) : (
                             <button
                                 onClick={handleSend}
-                                className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 text-gray-500 hover:text-gray-300 hover:border-white/10 transition-colors"
+                                className="flex items-center gap-1 bg-[var(--color-surface-overlay)] px-1.5 py-0.5 rounded border border-[var(--color-border-subtle)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:border-[var(--color-border-default)] transition-colors"
                             >
                                 <span className="text-[9px]">^</span>
                                 <CornerDownLeft className="w-2.5 h-2.5" />
                             </button>
                         )}
                         {showModelMenu && aiModels.length > 0 && (
-                            <div className={`absolute right-3 w-52 max-h-56 overflow-y-auto bg-[#16161e] border border-white/10 rounded-lg shadow-xl z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
+                            <div className={`absolute right-3 w-52 max-h-56 overflow-y-auto bg-[var(--color-surface-overlay)] border border-[var(--color-border-default)] rounded-xl shadow-xl z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
                                 {aiModels.map((model, index) => (
                                     <button
                                         key={`${model.id}-${index}`}
@@ -538,12 +720,12 @@ function PromptComposer(props: PromptComposerProps) {
                                             setSelectedModelId(model.id);
                                             setShowModelMenu(false);
                                         }}
-                                        className={`w-full text-left px-3 py-2 text-xs hover:bg-white/5 border-b border-white/5 last:border-b-0 ${model.id === activeModelId ? "text-emerald-500" : "text-gray-300"}`}
+                                        className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] last:border-b-0 ${model.id === activeModelId ? "text-[var(--color-accent-primary)]" : "text-[var(--color-text-secondary)]"}`}
                                     >
                                         <div className="truncate font-medium">
                                             {model.name || model.id || "Unnamed model"}
                                         </div>
-                                        <div className="text-[10px] text-gray-600 truncate">{model.id}</div>
+                                        <div className="text-[10px] text-[var(--color-text-muted)] truncate">{model.id}</div>
                                     </button>
                                 ))}
                             </div>
@@ -563,10 +745,10 @@ function ContextPills() {
     return (
         <div className="flex flex-wrap gap-1.5 px-3 py-2 max-h-24 overflow-y-auto">
             {contextPaths.map(path => (
-                <div key={path} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-[10px] text-gray-400 group hover:border-emerald-500/30 transition-all">
-                    <FileIcon className="w-3 h-3 text-emerald-500/50" />
+                <div key={path} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--color-surface-overlay)] border border-[var(--color-border-subtle)] text-[10px] text-[var(--color-text-tertiary)] group hover:border-[var(--color-accent-primary)]/30 transition-all">
+                    <FileIcon className="w-3 h-3 text-[var(--color-accent-primary)]/50" />
                     <span className="truncate max-w-[150px]">{path.split(/[/\\]/).pop()}</span>
-                    <button onClick={() => removeContextPath(path)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity">
+                    <button onClick={() => removeContextPath(path)} className="opacity-0 group-hover:opacity-100 hover:text-[var(--color-accent-error)] transition-opacity">
                         <X className="w-2.5 h-2.5" />
                     </button>
                 </div>
@@ -577,7 +759,7 @@ function ContextPills() {
 
 function MarkdownContent({ content }: { content: string }) {
     return (
-        <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-code:text-[var(--color-accent-primary)] prose-code:bg-white/5 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-transparent prose-pre:p-0">
+        <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-code:text-[var(--color-accent-primary)] prose-code:bg-[var(--color-accent-primary)]/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-none prose-pre:bg-transparent prose-pre:p-0 font-serif">
             <ReactMarkdown
                 components={{
                     code({ node, inline, className, children, ...props }: any) {
@@ -615,39 +797,50 @@ function MarkdownContent({ content }: { content: string }) {
     );
 }
 
+function ToolOperationLine({ op }: { op: ToolOperation }) {
+    const [expanded, setExpanded] = useState(false);
+    const isActive = op.status === "started";
+    const basename = op.target.split(/[/\\]/).pop() ?? op.target;
+    const hasDetails = op.details && op.details.trim() !== "";
+
+    return (
+        <div className="group/tool">
+            <div
+                className={`flex items-center gap-1 text-[12px] font-mono leading-6 select-none ${hasDetails ? "cursor-pointer" : ""}`}
+                onClick={() => hasDetails && setExpanded(!expanded)}
+                title={op.target}
+            >
+                <span className={isActive ? "tool-op-shimmer" : "text-[var(--color-text-tertiary)]"}>
+                    {op.operation}
+                </span>
+                <code className="text-[11px] px-1 py-[1px] rounded-sm bg-white/5 text-[#ff3366]/70 font-mono">
+                    {basename}
+                </code>
+                {hasDetails && (
+                    <span
+                        className={`ml-auto text-[var(--color-text-muted)] opacity-0 group-hover/tool:opacity-100 transition-all duration-150 text-[10px] ${expanded ? "rotate-90" : ""}`}
+                        style={{ display: "inline-block", transformOrigin: "center" }}
+                    >
+                        ▸
+                    </span>
+                )}
+            </div>
+            {expanded && hasDetails && (
+                <pre className="mt-1 mb-2 ml-1 pl-3 border-l border-[var(--color-border-subtle)] whitespace-pre-wrap font-mono text-[10px] text-[var(--color-text-muted)] leading-relaxed max-h-60 overflow-y-auto">
+                    {op.details}
+                </pre>
+            )}
+        </div>
+    );
+}
+
 function ToolOperationDisplay({ operations }: { operations: ToolOperation[] }) {
     if (!operations || operations.length === 0) return null;
 
-    // Get unique operations (already merged by the store)
-    const getStatusIcon = (status: string) => {
-        if (status === "started") return <Loader2 className="w-3 h-3 animate-spin text-[var(--color-text-tertiary)]" />;
-        if (status === "completed") return <Activity className="w-3 h-3 text-[var(--color-accent-success)]" />;
-        return <Activity className="w-3 h-3 text-[var(--color-accent-error)]" />;
-    };
-
     return (
-        <div className="mb-3 space-y-1">
+        <div className="my-1 space-y-0.5">
             {operations.map((op, i) => (
-                <div
-                    key={`${op.operation}-${op.target}-${i}`}
-                    className="flex flex-col gap-2 px-3 py-2 rounded-md bg-[#1a1b26] border border-white/5 ring-1 ring-white/10 text-[10px]"
-                >
-                    <div className="flex items-center gap-2.5">
-                        <FileText className="w-[16px] h-[16px] text-[var(--color-text-muted)]" />
-                        <span className="font-mono text-[12px] text-[var(--color-text-secondary)] tracking-wide truncate flex-1">
-                            {op.target}
-                        </span>
-                        {getStatusIcon(op.status)}
-                    </div>
-                    {op.details && op.details.trim() !== "" && (
-                        <details className="text-[9px] text-[var(--color-text-muted)]">
-                            <summary className="cursor-pointer uppercase tracking-widest">Diff</summary>
-                            <pre className="mt-2 whitespace-pre-wrap font-mono text-[9px] text-[var(--color-text-secondary)]">
-                                {op.details}
-                            </pre>
-                        </details>
-                    )}
-                </div>
+                <ToolOperationLine key={`${op.operation}-${op.target}-${i}`} op={op} />
             ))}
         </div>
     );
@@ -658,6 +851,23 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
     const [testLoading, setTestLoading] = useState(false);
     const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled, setRawStreamLoggingEnabled } = useSettingsStore();
     const modelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+    const visibleLogs = debugLogs.slice(-250);
+    const logCounts = visibleLogs.reduce<Record<string, number>>((acc, log) => {
+        acc[log.type] = (acc[log.type] || 0) + 1;
+        return acc;
+    }, {});
+
+    const colorForLogType = (type: string) => {
+        if (type === "error") return "text-red-400";
+        if (type === "retry") return "text-amber-300";
+        if (type === "attachment") return "text-cyan-300";
+        if (type === "backend") return "text-violet-300";
+        if (type === "stream") return "text-sky-300";
+        if (type === "success") return "text-emerald-300";
+        if (type === "warn") return "text-yellow-300";
+        if (type === "raw") return "text-fuchsia-300";
+        return "text-[var(--color-text-secondary)]";
+    };
 
     const runToolCallTest = async () => {
         setTestLoading(true);
@@ -749,24 +959,35 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
                     </button>
                 </div>
             </div>
-            
+
+                <div className="mb-3 flex flex-wrap gap-1.5 text-[9px] uppercase tracking-widest text-[var(--color-text-tertiary)]">
+                    <span className="px-1.5 py-0.5 rounded border border-[var(--color-border-subtle)]">
+                        {visibleLogs.length} logs
+                    </span>
+                    {Object.entries(logCounts).map(([type, count]) => (
+                        <span key={type} className={`px-1.5 py-0.5 rounded border border-[var(--color-border-subtle)] ${colorForLogType(type)}`}>
+                            {type}: {count}
+                        </span>
+                    ))}
+                </div>
+
             {testOutput && (
                 <div className="mb-3 p-2 bg-black rounded max-h-60 overflow-y-auto">
                     <pre className="text-[9px] font-mono whitespace-pre-wrap text-green-400">{testOutput}</pre>
                 </div>
             )}
-            
-            {debugLogs.length === 0 && !testOutput ? (
+
+                {visibleLogs.length === 0 && !testOutput ? (
                 <div className="opacity-50">No debug events yet. Click "Test Tool Call" to debug API.</div>
             ) : (
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                    {debugLogs.map((log, index) => (
-                        <div key={`${log.timestamp}-${index}`} className="flex items-start gap-2">
-                            <span className="opacity-50">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                            <span className={`uppercase tracking-widest ${log.type === "error" ? "text-red-400" : log.type === "retry" ? "text-amber-300" : log.type === "raw" ? "text-sky-300" : "text-[var(--color-text-secondary)]"}`}>
+                    <div className="space-y-1 max-h-72 overflow-y-auto rounded border border-[var(--color-border-subtle)] bg-black/30 p-2">
+                        {visibleLogs.map((log, index) => (
+                            <div key={`${log.timestamp}-${index}`} className="flex items-start gap-2 font-mono text-[9px] leading-relaxed">
+                                <span className="opacity-50 shrink-0">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                                <span className={`uppercase tracking-widest shrink-0 ${colorForLogType(log.type)}`}>
                                 {log.type}
                             </span>
-                            <span className="text-[var(--color-text-primary)]">{log.message}</span>
+                                <span className="text-[var(--color-text-primary)] whitespace-pre-wrap break-words">{log.message}</span>
                         </div>
                     ))}
                 </div>

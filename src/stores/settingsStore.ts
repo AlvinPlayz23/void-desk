@@ -13,6 +13,7 @@ export interface KeyBinding {
 export interface AIModelConfig {
     id: string;
     name: string;
+    supportsImages: boolean;
 }
 
 export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
@@ -98,7 +99,7 @@ export const useSettingsStore = create<SettingsState>()(
             // AI Settings
             openAIKey: "",
             openAIBaseUrl: "https://api.openai.com",
-            aiModels: [{ id: "gpt-4o", name: "gpt-4o" }],
+            aiModels: [{ id: "gpt-4o", name: "gpt-4o", supportsImages: false }],
             selectedModelId: "gpt-4o",
             inlineCompletionsEnabled: true,
             rawStreamLoggingEnabled: false,
@@ -179,7 +180,7 @@ export const useSettingsStore = create<SettingsState>()(
             resetSettings: () => set({
                 openAIKey: "",
                 openAIBaseUrl: "https://api.openai.com",
-                aiModels: [{ id: "gpt-4o", name: "gpt-4o" }],
+                aiModels: [{ id: "gpt-4o", name: "gpt-4o", supportsImages: false }],
                 selectedModelId: "gpt-4o",
                 inlineCompletionsEnabled: true,
                 rawStreamLoggingEnabled: false,
@@ -196,6 +197,19 @@ export const useSettingsStore = create<SettingsState>()(
         }),
         {
             name: "voidesk-settings",
+            version: 2,
+            migrate: (persistedState: any, version: number) => {
+                if (version < 2 && persistedState) {
+                    const state = persistedState as any;
+                    if (Array.isArray(state.aiModels)) {
+                        state.aiModels = state.aiModels.map((m: any) => ({
+                            ...m,
+                            supportsImages: m.supportsImages ?? false,
+                        }));
+                    }
+                }
+                return persistedState;
+            },
         }
     )
 );

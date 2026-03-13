@@ -54,10 +54,32 @@ impl Provider for OpenAICompatibleProvider {
         request.stream = false;
 
         let body = serde_json::to_string(&request)?;
-        let response_text = self.transport.post_text("chat/completions", &body).await?;
-        let response: ChatResponse = serde_json::from_str(&response_text)?;
-
-        Ok(response)
+        tracing::info!(
+            "Provider complete: sending request to {} (body_len={} bytes)",
+            self.base_url(),
+            body.len()
+        );
+        let start = std::time::Instant::now();
+        
+        match self.transport.post_text("chat/completions", &body).await {
+            Ok(response_text) => {
+                tracing::info!(
+                    "Provider complete: received response in {:?} (response_len={} bytes)",
+                    start.elapsed(),
+                    response_text.len()
+                );
+                let response: ChatResponse = serde_json::from_str(&response_text)?;
+                Ok(response)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Provider complete: request failed after {:?}: {}",
+                    start.elapsed(),
+                    e
+                );
+                Err(e)
+            }
+        }
     }
 
     async fn stream(
