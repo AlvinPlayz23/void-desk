@@ -8,9 +8,12 @@ export interface ToolOperation {
     details?: string;
 }
 
+export type ReasoningInnerTool = { id: string; toolOperation: ToolOperation };
+
 export type MessagePart =
     | { type: "text"; text: string }
-    | { type: "tool"; id: string; toolOperation: ToolOperation };
+    | { type: "tool"; id: string; toolOperation: ToolOperation }
+    | { type: "reasoning"; text: string; innerTools?: ReasoningInnerTool[] };
 
 export type ChatAttachment =
     | {
@@ -40,8 +43,8 @@ export interface Message {
     timestamp: number;
 }
 
-const getToolPartId = (op: ToolOperation) =>
-    `tool:${op.target}`;
+let toolPartCounter = 0;
+const generateToolPartId = () => `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${toolPartCounter++}`;
 
 const deriveContentFromParts = (parts: MessagePart[]) =>
     parts
@@ -55,7 +58,7 @@ const normalizeMessage = (message: any): Message => {
     }
     const parts: MessagePart[] = [];
     for (const op of message.toolOperations ?? []) {
-        parts.push({ type: "tool", id: getToolPartId(op), toolOperation: op });
+        parts.push({ type: "tool", id: generateToolPartId(), toolOperation: op });
     }
     if (message.content) {
         parts.push({ type: "text", text: message.content });
@@ -114,7 +117,9 @@ interface ChatState {
     addMessage: (message: Message) => void;
     updateLastMessage: (updates: Partial<Message>) => void;
     appendToLastMessage: (text: string) => void;
+    appendReasoningToLastMessage: (text: string) => void;
     addToolOperation: (operation: ToolOperation) => void;
+    addToolOperationToLastReasoning: (operation: ToolOperation) => void;
     removeLastMessage: () => void;
     clearCurrentMessages: () => void;
     addDebugLog: (log: DebugLog) => void;
@@ -267,6 +272,38 @@ export const useChatStore = create<ChatState>()(
                 });
             },
 
+            appendReasoningToLastMessage: (text) => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current || current.messages.length === 0) return state;
+
+                    const lastIndex = current.messages.length - 1;
+                    const newMessages = [...current.messages];
+                    const lastMsg = newMessages[lastIndex];
+                    const parts = [...lastMsg.parts];
+                    const lastPart = parts[parts.length - 1];
+
+                    if (lastPart && lastPart.type === "reasoning") {
+                        parts[parts.length - 1] = { type: "reasoning", text: lastPart.text + text };
+                    } else {
+                        parts.push({ type: "reasoning", text });
+                    }
+
+                    newMessages[lastIndex] = {
+                        ...lastMsg,
+                        parts,
+                    };
+
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id
+                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
+                                : s
+                        ),
+                    };
+                });
+            },
+
             addToolOperation: (operation) => {
                 set((state) => {
                     const current = state.currentSession();
@@ -276,34 +313,54 @@ export const useChatStore = create<ChatState>()(
                     const newMessages = [...current.messages];
                     const lastMsg = newMessages[lastIndex];
 
-                    // Update legacy toolOperations array — match by target only
+                    // Update legacy toolOperations array
                     const ops = [...(lastMsg.toolOperations || [])];
-                    const existingIdx = ops.findIndex(
-                        (op) => op.target === operation.target
-                    );
-                    if (existingIdx !== -1) {
-                        ops[existingIdx] = { ...ops[existingIdx], ...operation };
-                    } else {
+                    if (operation.status === "started") {
                         ops.push(operation);
+                    } else {
+                        // Find the LAST started op with the same target
+                        let matchIdx = -1;
+                        for (let i = ops.length - 1; i >= 0; i--) {
+                            if (ops[i].target === operation.target && ops[i].status === "started") {
+                                matchIdx = i;
+                                break;
+                            }
+                        }
+                        if (matchIdx !== -1) {
+                            ops[matchIdx] = { ...ops[matchIdx], ...operation };
+                        } else {
+                            ops.push(operation);
+                        }
                     }
 
-                    // Update parts array — match by target-based ID
-                    const toolId = getToolPartId(operation);
+                    // Update parts array
                     const parts = [...lastMsg.parts];
-                    const existingPartIdx = parts.findIndex(
-                        (p) => p.type === "tool" && p.id === toolId
-                    );
-                    if (existingPartIdx !== -1) {
-                        const existingPart = parts[existingPartIdx];
-                        if (existingPart.type === "tool") {
-                            parts[existingPartIdx] = {
-                                type: "tool",
-                                id: toolId,
-                                toolOperation: { ...existingPart.toolOperation, ...operation },
-                            };
-                        }
-                    } else {
+                    if (operation.status === "started") {
+                        const toolId = generateToolPartId();
                         parts.push({ type: "tool", id: toolId, toolOperation: operation });
+                    } else {
+                        // Find the LAST started tool part with the same target
+                        let matchPartIdx = -1;
+                        for (let i = parts.length - 1; i >= 0; i--) {
+                            const p = parts[i];
+                            if (p.type === "tool" && p.toolOperation.target === operation.target && p.toolOperation.status === "started") {
+                                matchPartIdx = i;
+                                break;
+                            }
+                        }
+                        if (matchPartIdx !== -1) {
+                            const existingPart = parts[matchPartIdx];
+                            if (existingPart.type === "tool") {
+                                parts[matchPartIdx] = {
+                                    type: "tool",
+                                    id: existingPart.id,
+                                    toolOperation: { ...existingPart.toolOperation, ...operation },
+                                };
+                            }
+                        } else {
+                            const toolId = generateToolPartId();
+                            parts.push({ type: "tool", id: toolId, toolOperation: operation });
+                        }
                     }
 
                     newMessages[lastIndex] = {
@@ -317,6 +374,52 @@ export const useChatStore = create<ChatState>()(
                             s.id === current.id
                                 ? { ...s, messages: newMessages, lastUpdated: Date.now() }
                                 : s
+                        ),
+                    };
+                });
+            },
+
+            addToolOperationToLastReasoning: (operation) => {
+                set((state) => {
+                    const current = state.currentSession();
+                    if (!current || current.messages.length === 0) return state;
+
+                    const lastIndex = current.messages.length - 1;
+                    const newMessages = [...current.messages];
+                    const lastMsg = newMessages[lastIndex];
+                    const parts = [...lastMsg.parts];
+
+                    let reasoningIdx = -1;
+                    for (let i = parts.length - 1; i >= 0; i--) {
+                        if (parts[i].type === "reasoning") { reasoningIdx = i; break; }
+                    }
+                    if (reasoningIdx === -1) return state;
+
+                    const rp = parts[reasoningIdx];
+                    if (rp.type !== "reasoning") return state;
+                    const innerTools = [...(rp.innerTools ?? [])];
+
+                    if (operation.status === "started") {
+                        innerTools.push({ id: generateToolPartId(), toolOperation: operation });
+                    } else {
+                        let matchIdx = -1;
+                        for (let i = innerTools.length - 1; i >= 0; i--) {
+                            if (innerTools[i].toolOperation.target === operation.target && innerTools[i].toolOperation.status === "started") {
+                                matchIdx = i; break;
+                            }
+                        }
+                        if (matchIdx !== -1) {
+                            innerTools[matchIdx] = { ...innerTools[matchIdx], toolOperation: { ...innerTools[matchIdx].toolOperation, ...operation } };
+                        } else {
+                            innerTools.push({ id: generateToolPartId(), toolOperation: operation });
+                        }
+                    }
+
+                    parts[reasoningIdx] = { ...rp, innerTools };
+                    newMessages[lastIndex] = { ...lastMsg, parts };
+                    return {
+                        sessions: state.sessions.map((s) =>
+                            s.id === current.id ? { ...s, messages: newMessages, lastUpdated: Date.now() } : s
                         ),
                     };
                 });

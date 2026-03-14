@@ -1,3 +1,7 @@
+
+the attachment code i think iss like a bit too much..workarounds, clean it but functional..use hunter alpha true model
+
+
 d&d still not working
 @ fixed but when message sent there is no ui showing that context is added...
 started and complete tool indicator 

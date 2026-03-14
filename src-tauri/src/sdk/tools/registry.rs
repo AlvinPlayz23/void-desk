@@ -50,6 +50,7 @@ pub struct ToolPolicy {
     pub allow_command_tool: bool,
     pub command_allowlist: Option<Vec<String>>,
     pub command_timeout_ms: u64,
+    pub allow_tools_in_reasoning: bool,
 }
 
 impl Default for ToolPolicy {
@@ -58,6 +59,7 @@ impl Default for ToolPolicy {
             allow_command_tool: true,
             command_allowlist: None,
             command_timeout_ms: 120_000,
+            allow_tools_in_reasoning: true,
         }
     }
 }

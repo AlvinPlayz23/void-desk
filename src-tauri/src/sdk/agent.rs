@@ -21,8 +21,8 @@ use crate::sdk::tools::{AgentToolOutput, ToolPolicy, ToolRegistry};
 
 const DEFAULT_MAX_ITERATIONS: usize = 3000;
 const MAX_CONSECUTIVE_SELF_CORRECTIONS: usize = 10;
-const STREAM_OPEN_TIMEOUT_SECONDS: u64 = 45;
-const MULTIMODAL_COMPLETION_TIMEOUT_SECONDS: u64 = 180;
+const STREAM_OPEN_TIMEOUT_SECONDS: u64 = 200;
+const MULTIMODAL_COMPLETION_TIMEOUT_SECONDS: u64 = 200;
 
 /// Events emitted by the agent during execution
 #[derive(Debug, Clone)]
@@ -371,6 +371,9 @@ impl Agent {
                 let mut tool_calls: Vec<ToolCall> = Vec::new();
                 let mut saw_output = false;
                 let mut stream_error: Option<Error> = None;
+                let mut had_reasoning = false;
+                let mut in_think_block = false;
+                let mut think_buf = String::new();
 
                 if contains_inline_images {
                     emit_debug(
@@ -599,13 +602,21 @@ impl Agent {
                             Ok(StreamEvent::TextDelta(text)) => {
                                 if !text.is_empty() {
                                     saw_output = true;
-                                    assistant_text.push_str(&text);
-                                    let _ = tx.send(Ok(AgentEvent::TextDelta(text))).await;
+                                    let derived = split_think_tags(&text, &mut in_think_block, &mut think_buf);
+                                    for ev in derived {
+                                        match &ev {
+                                            AgentEvent::TextDelta(t) => assistant_text.push_str(t),
+                                            AgentEvent::ReasoningDelta(_) => had_reasoning = true,
+                                            _ => {}
+                                        }
+                                        let _ = tx.send(Ok(ev)).await;
+                                    }
                                 }
                             }
                             Ok(StreamEvent::ReasoningDelta(reasoning)) => {
                                 if !reasoning.is_empty() {
                                     saw_output = true;
+                                    had_reasoning = true;
                                     let _ = tx.send(Ok(AgentEvent::ReasoningDelta(reasoning))).await;
                                 }
                             }
@@ -633,6 +644,16 @@ impl Agent {
                                 }
                             }
                             Ok(StreamEvent::Done) => {
+                                if !think_buf.is_empty() {
+                                    if in_think_block {
+                                        had_reasoning = true;
+                                        let _ = tx.send(Ok(AgentEvent::ReasoningDelta(think_buf.clone()))).await;
+                                    } else {
+                                        assistant_text.push_str(&think_buf);
+                                        let _ = tx.send(Ok(AgentEvent::TextDelta(think_buf.clone()))).await;
+                                    }
+                                    think_buf.clear();
+                                }
                                 info!(
                                     "Stream done - text: {} chars, tool_calls: {}, saw_output: {}",
                                     assistant_text.len(),
@@ -662,6 +683,17 @@ impl Agent {
                             }
                         }
                     }
+                }
+
+                if !think_buf.is_empty() {
+                    if in_think_block {
+                        had_reasoning = true;
+                        let _ = tx.send(Ok(AgentEvent::ReasoningDelta(think_buf.clone()))).await;
+                    } else {
+                        assistant_text.push_str(&think_buf);
+                        let _ = tx.send(Ok(AgentEvent::TextDelta(think_buf.clone()))).await;
+                    }
+                    think_buf.clear();
                 }
 
                 // If stream errored, feed error back to the LLM to self-correct
@@ -707,6 +739,11 @@ impl Agent {
                 }
 
                 consecutive_self_corrections = 0;
+
+                if had_reasoning && !agent.tools.policy().allow_tools_in_reasoning && !tool_calls.is_empty() {
+                    emit_debug(&tx, "policy", "Tool calls suppressed: allow_tools_in_reasoning=false").await;
+                    tool_calls.clear();
+                }
 
                 if tool_calls.is_empty() {
                     if !assistant_text.is_empty() {
@@ -927,6 +964,59 @@ async fn emit_debug(
             message: message.into(),
         }))
         .await;
+}
+
+fn safe_emit_len(buf: &str, tag: &str) -> usize {
+    let buf_bytes = buf.as_bytes();
+    let tag_bytes = tag.as_bytes();
+    let max_overlap = tag.len().min(buf.len());
+    for overlap in (1..=max_overlap).rev() {
+        if buf_bytes[buf.len() - overlap..] == tag_bytes[..overlap] {
+            return buf.len() - overlap;
+        }
+    }
+    buf.len()
+}
+
+fn split_think_tags(text: &str, in_think: &mut bool, buf: &mut String) -> Vec<AgentEvent> {
+    buf.push_str(text);
+    let mut events = Vec::new();
+
+    loop {
+        if *in_think {
+            if let Some(pos) = buf.find("</think>") {
+                let chunk = buf[..pos].to_string();
+                if !chunk.is_empty() {
+                    events.push(AgentEvent::ReasoningDelta(chunk));
+                }
+                *buf = buf[pos + "</think>".len()..].to_string();
+                *in_think = false;
+            } else {
+                let safe = safe_emit_len(buf, "</think>");
+                if safe > 0 {
+                    events.push(AgentEvent::ReasoningDelta(buf[..safe].to_string()));
+                    *buf = buf[safe..].to_string();
+                }
+                break;
+            }
+        } else if let Some(pos) = buf.find("<think>") {
+            let before = buf[..pos].to_string();
+            if !before.is_empty() {
+                events.push(AgentEvent::TextDelta(before));
+            }
+            *buf = buf[pos + "<think>".len()..].to_string();
+            *in_think = true;
+        } else {
+            let safe = safe_emit_len(buf, "<think>");
+            if safe > 0 {
+                events.push(AgentEvent::TextDelta(buf[..safe].to_string()));
+                *buf = buf[safe..].to_string();
+            }
+            break;
+        }
+    }
+
+    events
 }
 
 fn should_attempt_self_correction(err: &Error) -> bool {

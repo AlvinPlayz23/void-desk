@@ -7,21 +7,19 @@ use tokio::time::{sleep, Duration};
 
 use crate::sdk::core::SdkError;
 
+const RETRY_DELAY_MS: &[u64] = &[0, 10_000, 20_000, 50_000, 70_000, 80_000, 90_000, 100_000, 120_000, 150_000];
+
 #[derive(Debug, Clone)]
 pub struct TransportConfig {
     pub timeout_ms: u64,
     pub max_retries: u32,
-    pub backoff_base_ms: u64,
-    pub backoff_max_ms: u64,
 }
 
 impl Default for TransportConfig {
     fn default() -> Self {
         Self {
             timeout_ms: 300_000,
-            max_retries: 2,
-            backoff_base_ms: 250,
-            backoff_max_ms: 2_500,
+            max_retries: RETRY_DELAY_MS.len() as u32,
         }
     }
 }
@@ -161,13 +159,13 @@ impl HttpTransport {
                         break;
                     }
 
-                    let backoff_ms = std::cmp::min(
-                        self.config
-                            .backoff_base_ms
-                            .saturating_mul(2_u64.saturating_pow(attempt)),
-                        self.config.backoff_max_ms,
-                    );
-                    sleep(Duration::from_millis(backoff_ms)).await;
+                    let delay_ms = RETRY_DELAY_MS
+                        .get(attempt as usize - 1)
+                        .copied()
+                        .unwrap_or(80_000);
+                    if delay_ms > 0 {
+                        sleep(Duration::from_millis(delay_ms)).await;
+                    }
                 }
             }
         }

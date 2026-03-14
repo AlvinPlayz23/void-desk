@@ -9,6 +9,7 @@ export interface AIResponseChunk {
     content?: string;
     tool_call?: string;
     tool_operation?: ToolOperation;
+    reasoning?: string;
     debug?: string;
     debug_type?: string;
     error?: string;
@@ -39,7 +40,8 @@ const serializeConversationHistory = (messages: Message[]): ConversationHistoryM
         )
         .map((message) => ({ role: message.role, content: message.content }));
 
-const MAX_FRONTEND_API_RETRIES = 10;
+const RETRY_DELAYS_MS = [0, 10_000, 20_000, 50_000, 70_000, 80_000, 90_000, 100_000, 120_000, 150_000];
+const MAX_FRONTEND_API_RETRIES = RETRY_DELAYS_MS.length;
 const MAX_INLINE_IMAGE_BYTES = 350 * 1024;
 const MAX_INLINE_IMAGE_DIMENSION = 1280;
 
@@ -153,7 +155,7 @@ export function useAI() {
     const { refreshFileTree } = useFileSystem();
     const messages = useChatStore((state) => state.currentMessages());
     const activeSessionId = useChatStore((state) => state.activeSessionId);
-    const { addMessage, appendToLastMessage, addToolOperation, updateLastMessage, addDebugLog } = useChatStore();
+    const { addMessage, appendToLastMessage, appendReasoningToLastMessage, addToolOperation, addToolOperationToLastReasoning, updateLastMessage, addDebugLog } = useChatStore();
 
     // Store abort flag
     const abortRef = useRef(false);
@@ -163,6 +165,7 @@ export function useAI() {
     const activeRequestRef = useRef(0);
     const activeRunIdRef = useRef<string | null>(null);
     const currentAttachmentsRef = useRef<ChatAttachment[]>([]);
+    const inReasoningContextRef = useRef(false);
 
     const stopStreaming = useCallback(() => {
         abortRef.current = true;
@@ -378,7 +381,7 @@ export function useAI() {
                                 message: `Scheduling auto-retry ${retryAttemptsRef.current}/${MAX_FRONTEND_API_RETRIES} for request ${runId}${errorStatusLabel || retryableLabel ? ` (${[errorStatusLabel.trim(), retryableLabel.trim()].filter(Boolean).join(", ")})` : ""}`,
                             });
 
-                            const retryDelayMs = Math.min(1000 * retryAttemptsRef.current, 4000);
+                            const retryDelayMs = RETRY_DELAYS_MS[retryAttemptsRef.current - 1] ?? 80_000;
                             setTimeout(() => {
                                 if (abortRef.current || activeRequestRef.current !== requestId) return;
                                 useChatStore.getState().removeLastMessage();
@@ -422,8 +425,17 @@ export function useAI() {
                         appendToLastMessage(chunk.content);
                     }
 
+                    if (chunk.reasoning) {
+                        inReasoningContextRef.current = true;
+                        appendReasoningToLastMessage(chunk.reasoning);
+                    }
+
                     if (chunk.tool_operation) {
-                        addToolOperation(chunk.tool_operation);
+                        if (inReasoningContextRef.current) {
+                            addToolOperationToLastReasoning(chunk.tool_operation);
+                        } else {
+                            addToolOperation(chunk.tool_operation);
+                        }
 
                         addDebugLog({
                             timestamp: Date.now(),
@@ -468,6 +480,7 @@ export function useAI() {
                         pendingRetryRef.current = false;
                         activeRunIdRef.current = null;
                         retryAttemptsRef.current = 0;
+                        inReasoningContextRef.current = false;
 
                         addDebugLog({
                             timestamp: Date.now(),
@@ -525,6 +538,7 @@ export function useAI() {
             rootPath,
             addMessage,
             appendToLastMessage,
+            appendReasoningToLastMessage,
             addToolOperation,
             updateLastMessage,
             addDebugLog,

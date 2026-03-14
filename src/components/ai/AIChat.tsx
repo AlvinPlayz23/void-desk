@@ -139,6 +139,55 @@ export function AIChat() {
             )
             .join(", ");
 
+    const handlePasteImage = (e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        const imageItems: DataTransferItem[] = [];
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith("image/")) {
+                imageItems.push(items[i]);
+            }
+        }
+        if (imageItems.length === 0) return;
+
+        if (!supportsImages) {
+            addDebugLog({
+                timestamp: Date.now(),
+                type: "warn",
+                message: `Pasted image ignored because model ${activeModelId} does not support images`,
+            });
+            return;
+        }
+
+        e.preventDefault();
+
+        for (const item of imageItems) {
+            const file = item.getAsFile();
+            if (!file) continue;
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result as string;
+                const att: ChatAttachment = {
+                    id: `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    kind: "image",
+                    name: file.name || "pasted-image.png",
+                    mimeType: file.type || "image/png",
+                    dataUrl,
+                    preparedForModelId: activeModelId,
+                };
+                setDraftAttachments((prev) => [...prev, att]);
+                addDebugLog({
+                    timestamp: Date.now(),
+                    type: "attachment",
+                    message: `Pasted image added: ${att.name} [~${Math.round(dataUrl.length / 1024)}KB data-url]`,
+                });
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const handleAddAttachment = async () => {
         try {
             addDebugLog({
@@ -414,6 +463,7 @@ export function AIChat() {
                             handleAddAttachment={handleAddAttachment}
                             removeAttachment={removeAttachment}
                             supportsImages={supportsImages}
+                            onPaste={handlePasteImage}
                         />
 
                         {/* Empty state center - matching mock glow pattern */}
@@ -485,6 +535,7 @@ export function AIChat() {
                                 handleAddAttachment={handleAddAttachment}
                                 removeAttachment={removeAttachment}
                                 supportsImages={supportsImages}
+                                onPaste={handlePasteImage}
                             />
                         </div>
                     </>
@@ -501,7 +552,7 @@ function MessageBubble({ message }: { message: Message }) {
     if (isUser) {
         return (
             <div className="flex flex-col items-end w-full mb-6">
-                <div className="max-w-[85%] text-[14px] leading-relaxed text-[var(--color-text-primary)] font-medium px-5 py-4 bg-[var(--color-surface-overlay)] border border-[var(--color-border-default)]">
+                <div className="max-w-[85%] text-[13.5px] leading-relaxed text-[var(--color-text-primary)] font-normal px-5 py-3.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border-default)] rounded-2xl rounded-br-sm" style={{ fontFamily: "var(--font-sans)" }}>
                     <MarkdownContent content={message.content} />
                     {message.attachments && message.attachments.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
@@ -528,10 +579,15 @@ function MessageBubble({ message }: { message: Message }) {
 
     return (
         <div className="flex flex-col items-start w-full mb-8">
-            <div className="max-w-[95%] text-[14px] leading-relaxed text-[var(--color-text-secondary)] space-y-4">
+            <div className="max-w-[95%] text-[14px] leading-[1.7] text-[var(--color-text-secondary)] space-y-4" style={{ fontFamily: "var(--font-sans)" }}>
                 {parts.map((part, i) => {
                     if (part.type === "text") {
                         return part.text ? <MarkdownContent key={i} content={part.text} /> : null;
+                    }
+                    if (part.type === "reasoning") {
+                        return part.text || (part.innerTools && part.innerTools.length > 0)
+                            ? <ReasoningBlock key={i} text={part.text} innerTools={part.innerTools} />
+                            : null;
                     }
                     return (
                         <ToolOperationDisplay key={part.id ?? i} operations={[part.toolOperation]} />
@@ -567,6 +623,7 @@ interface PromptComposerProps {
     handleAddAttachment: () => void;
     removeAttachment: (id: string) => void;
     supportsImages: boolean;
+    onPaste: (e: React.ClipboardEvent) => void;
 }
 
 function PromptComposer(props: PromptComposerProps) {
@@ -591,6 +648,7 @@ function PromptComposer(props: PromptComposerProps) {
         draftAttachments,
         handleAddAttachment,
         removeAttachment,
+        onPaste,
     } = props;
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -656,6 +714,7 @@ function PromptComposer(props: PromptComposerProps) {
                         ref={textareaRef}
                         value={input}
                         onChange={handleInputChange}
+                        onPaste={onPaste}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
                                 e.preventDefault();
@@ -757,9 +816,39 @@ function ContextPills() {
     );
 }
 
+function ReasoningBlock({ text, innerTools }: { text: string; innerTools?: import("@/stores/chatStore").ReasoningInnerTool[] }) {
+    const [expanded, setExpanded] = useState(false);
+    const hasTools = innerTools && innerTools.length > 0;
+    return (
+        <div className="my-2">
+            <button
+                onClick={() => setExpanded(!expanded)}
+                className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+            >
+                <span className={`transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}>▸</span>
+                <span>Thinking</span>
+                {hasTools && <span className="text-[9px] opacity-50">· {innerTools!.length} tool{innerTools!.length !== 1 ? "s" : ""}</span>}
+                <span className="text-[9px] opacity-50">({text.length} chars)</span>
+            </button>
+            {expanded && (
+                <div className="mt-1.5 ml-1 pl-3 border-l border-[var(--color-border-subtle)] space-y-2">
+                    {text && (
+                        <div className="text-[12px] text-[var(--color-text-muted)] leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto" style={{ fontFamily: "var(--font-sans)" }}>
+                            {text}
+                        </div>
+                    )}
+                    {hasTools && (
+                        <ToolOperationDisplay operations={innerTools!.map((t) => t.toolOperation)} />
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function MarkdownContent({ content }: { content: string }) {
     return (
-        <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-code:text-[var(--color-accent-primary)] prose-code:bg-[var(--color-accent-primary)]/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-none prose-pre:bg-transparent prose-pre:p-0 font-serif">
+        <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-code:text-[var(--color-accent-primary)] prose-code:bg-[var(--color-accent-primary)]/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-none prose-pre:bg-transparent prose-pre:p-0" style={{ fontFamily: "var(--font-sans)" }}>
             <ReactMarkdown
                 components={{
                     code({ node, inline, className, children, ...props }: any) {
