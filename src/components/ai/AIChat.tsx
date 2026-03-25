@@ -881,7 +881,7 @@ function PromptComposer(props: PromptComposerProps) {
                                                 onClick={() => setShowModelMenu(false)}
                                                 className="w-full text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)] hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)]"
                                             >
-                                                Back To Presets
+                                                ← Back To Presets
                                             </button>
                                             <div className="px-3 py-2 text-[10px] uppercase tracking-widest text-[var(--color-text-muted)] border-b border-[var(--color-border-subtle)]">
                                                 {activePresetName}
