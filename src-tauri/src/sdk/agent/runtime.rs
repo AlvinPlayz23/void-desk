@@ -47,11 +47,7 @@ impl TurnState {
         }
     }
 
-    pub async fn apply_text_delta(
-        &mut self,
-        tx: &mpsc::Sender<Result<AgentEvent>>,
-        text: String,
-    ) {
+    pub async fn apply_text_delta(&mut self, tx: &mpsc::Sender<Result<AgentEvent>>, text: String) {
         self.saw_output = true;
         let derived = split_think_tags(&text, &mut self.in_think_block, &mut self.think_buf);
         for event in derived {
@@ -64,10 +60,7 @@ impl TurnState {
         }
     }
 
-    pub async fn flush_pending_think(
-        &mut self,
-        tx: &mpsc::Sender<Result<AgentEvent>>,
-    ) {
+    pub async fn flush_pending_think(&mut self, tx: &mpsc::Sender<Result<AgentEvent>>) {
         if self.think_buf.is_empty() {
             return;
         }
@@ -442,7 +435,10 @@ pub async fn execute_tool_round(
     } else {
         Some(MessageContent::Plain(assistant_text.to_string()))
     };
-    messages.push(Message::assistant_with_tool_calls(content, tool_calls.clone()));
+    messages.push(Message::assistant_with_tool_calls(
+        content,
+        tool_calls.clone(),
+    ));
 
     for tool_call in tool_calls {
         if cancel_flag.load(Ordering::SeqCst) {
@@ -511,7 +507,12 @@ pub async fn execute_tool_round(
             .await;
     }
 
-    emit_debug(tx, "agent", "Tool execution phase complete; continuing agent loop").await;
+    emit_debug(
+        tx,
+        "agent",
+        "Tool execution phase complete; continuing agent loop",
+    )
+    .await;
     info!("Tool execution complete, continuing to next iteration");
     Ok(RuntimeControl::Completed(()))
 }

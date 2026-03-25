@@ -57,13 +57,14 @@ impl SessionPersistence {
             let messages_json: String = row.get(2)?;
             let created_at: i64 = row.get(3)?;
             let updated_at: i64 = row.get(4)?;
-            let messages = serde_json::from_str::<Vec<Message>>(&messages_json).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    messages_json.len(),
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
+            let messages =
+                serde_json::from_str::<Vec<Message>>(&messages_json).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        messages_json.len(),
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
 
             Ok(Session {
                 id: id.clone(),
@@ -89,8 +90,8 @@ impl SessionPersistence {
         };
 
         let connection = open_connection(db_path)?;
-        let messages_json =
-            serde_json::to_string(&session.messages).context("failed to serialize session messages")?;
+        let messages_json = serde_json::to_string(&session.messages)
+            .context("failed to serialize session messages")?;
         connection.execute(
             &format!(
                 r#"

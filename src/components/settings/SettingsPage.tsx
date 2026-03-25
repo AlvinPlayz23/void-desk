@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { listen } from "@tauri-apps/api/event";
 import {
     X,
     Search,
@@ -24,7 +25,15 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useUIStore, SettingsCategory, Theme } from "@/stores/uiStore";
-import { AIProviderPreset, createProviderPreset, useSettingsStore, KeyBinding } from "@/stores/settingsStore";
+import {
+    AIProviderPreset,
+    AIProviderType,
+    createProviderPreset,
+    getDefaultModelsForProviderType,
+    modelsMatchProviderDefaults,
+    useSettingsStore,
+    KeyBinding,
+} from "@/stores/settingsStore";
 
 interface SettingsCategoryItem {
     id: SettingsCategory;
@@ -57,6 +66,7 @@ interface PendingSettings {
     editorFontFamily?: string;
     uiScale?: number;
     // AI
+    providerType?: AIProviderType;
     openAIKey?: string;
     openAIBaseUrl?: string;
     aiModels?: { id: string; name: string; supportsImages: boolean }[];
@@ -88,6 +98,7 @@ export function SettingsPage() {
     );
     const settings = useSettingsStore(
         useShallow((state) => ({
+            providerType: state.providerType,
             openAIKey: state.openAIKey,
             openAIBaseUrl: state.openAIBaseUrl,
             aiModels: state.aiModels,
@@ -105,6 +116,7 @@ export function SettingsPage() {
             lineNumbers: state.lineNumbers,
             minimap: state.minimap,
             keybindings: state.keybindings,
+            setProviderType: state.setProviderType,
             setOpenAIKey: state.setOpenAIKey,
             setOpenAIBaseUrl: state.setOpenAIBaseUrl,
             setAIModels: state.setAIModels,
@@ -152,6 +164,7 @@ export function SettingsPage() {
         if (pending.editorFontSize !== undefined) settings.setEditorFontSize(pending.editorFontSize);
         if (pending.editorFontFamily !== undefined) settings.setEditorFontFamily(pending.editorFontFamily);
         if (pending.uiScale !== undefined) settings.setUIScale(pending.uiScale);
+        if (pending.providerType !== undefined) settings.setProviderType(pending.providerType);
         if (pending.openAIKey !== undefined) settings.setOpenAIKey(pending.openAIKey);
         if (pending.openAIBaseUrl !== undefined) settings.setOpenAIBaseUrl(pending.openAIBaseUrl);
         if (pending.aiModels !== undefined) settings.setAIModels(pending.aiModels);
@@ -295,6 +308,7 @@ export function SettingsPage() {
                         )}
                         {settingsCategory === "ai" && (
                             <AISettings
+                                currentProviderType={getValue("providerType", settings.providerType)}
                                 currentKey={getValue("openAIKey", settings.openAIKey)}
                                 currentBaseUrl={getValue("openAIBaseUrl", settings.openAIBaseUrl)}
                                 currentModels={getValue("aiModels", settings.aiModels)}
@@ -304,6 +318,7 @@ export function SettingsPage() {
                                 currentSelectedProviderPresetId={getValue("selectedProviderPresetId", settings.selectedProviderPresetId)}
                                 currentInlineEnabled={getValue("inlineCompletionsEnabled", settings.inlineCompletionsEnabled)}
                                 currentChatContextWindow={getValue("chatContextWindow", settings.chatContextWindow)}
+                                onProviderTypeChange={(v) => updatePending("providerType", v)}
                                 onKeyChange={(v) => updatePending("openAIKey", v)}
                                 onBaseUrlChange={(v) => updatePending("openAIBaseUrl", v)}
                                 onModelsChange={(v) => updatePending("aiModels", v)}
@@ -516,6 +531,7 @@ function AppearanceSettings({
 }
 
 interface AISettingsProps {
+    currentProviderType: AIProviderType;
     currentKey: string;
     currentBaseUrl: string;
     currentModels: { id: string; name: string; supportsImages: boolean }[];
@@ -525,6 +541,7 @@ interface AISettingsProps {
     currentSelectedProviderPresetId: string;
     currentInlineEnabled: boolean;
     currentChatContextWindow: number;
+    onProviderTypeChange: (providerType: AIProviderType) => void;
     onKeyChange: (key: string) => void;
     onBaseUrlChange: (url: string) => void;
     onModelsChange: (models: { id: string; name: string; supportsImages: boolean }[]) => void;
@@ -536,7 +553,55 @@ interface AISettingsProps {
     onChatContextWindowChange: (tokens: number) => void;
 }
 
+interface CodexAuthStatus {
+    authenticated: boolean;
+    account_id?: string | null;
+    expires_at_ms?: number | null;
+    login_in_progress: boolean;
+}
+
+const OPENAI_COMPATIBLE_BASE_URL = "https://api.openai.com";
+const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
+
+const providerOptions: { value: AIProviderType; label: string }[] = [
+    { value: "openai_compatible", label: "OpenAI Compatible" },
+    { value: "codex_subscription", label: "ChatGPT OAuth (Codex)" },
+];
+
+const modelsMatchExact = (
+    models: { id: string; name: string; supportsImages: boolean }[],
+    defaults: { id: string; name: string; supportsImages: boolean }[]
+) =>
+    models.length === defaults.length
+    && models.every((model, index) =>
+        model.id === defaults[index]?.id
+        && model.name === defaults[index]?.name
+        && model.supportsImages === defaults[index]?.supportsImages
+    );
+
+const resolveModelsForProviderSwitch = (
+    models: { id: string; name: string; supportsImages: boolean }[],
+    currentProviderType: AIProviderType,
+    nextProviderType: AIProviderType
+) => {
+    const emptyModels = models.length === 0 || models.every((model) => !model.id.trim() && !model.name.trim());
+
+    if (
+        currentProviderType !== nextProviderType
+        || emptyModels
+        || modelsMatchExact(models, getDefaultModelsForProviderType("openai_compatible"))
+        || modelsMatchExact(models, getDefaultModelsForProviderType("codex_subscription"))
+        || modelsMatchProviderDefaults(models, currentProviderType)
+        || modelsMatchProviderDefaults(models, nextProviderType)
+    ) {
+        return getDefaultModelsForProviderType(nextProviderType);
+    }
+
+    return models;
+};
+
 function AISettings({
+    currentProviderType,
     currentKey,
     currentBaseUrl,
     currentModels,
@@ -546,6 +611,7 @@ function AISettings({
     currentSelectedProviderPresetId,
     currentInlineEnabled,
     currentChatContextWindow,
+    onProviderTypeChange,
     onKeyChange,
     onBaseUrlChange,
     onModelsChange,
@@ -558,6 +624,8 @@ function AISettings({
 }: AISettingsProps) {
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [codexAuthStatus, setCodexAuthStatus] = useState<CodexAuthStatus | null>(null);
+    const [isAuthBusy, setIsAuthBusy] = useState(false);
 
     const normalizedPresets = currentProviderPresets.length > 0 ? currentProviderPresets : [createProviderPreset()];
     const activePreset =
@@ -567,8 +635,75 @@ function AISettings({
         ? presetModels.find((model) => model.id === activePreset?.selectedModelId) || presetModels[0]
         : currentModels.find((model) => model.id === currentSelectedModelId) || currentModels[0];
     const selectedModelId = selectedModel?.id || "";
+    const activeProviderType = currentProviderPresetsEnabled
+        ? activePreset?.providerType || "openai_compatible"
+        : currentProviderType;
+    const isCodexActive = activeProviderType === "codex_subscription";
     const activeApiKey = currentProviderPresetsEnabled ? activePreset?.apiKey || "" : currentKey;
     const activeBaseUrl = currentProviderPresetsEnabled ? activePreset?.baseUrl || currentBaseUrl : currentBaseUrl;
+
+    const refreshCodexAuthStatus = async () => {
+        try {
+            const status = await invoke<CodexAuthStatus>("codex_auth_status");
+            setCodexAuthStatus(status);
+        } catch (error) {
+            setCodexAuthStatus({
+                authenticated: false,
+                login_in_progress: false,
+            });
+            setTestResult({ success: false, message: String(error) });
+        }
+    };
+
+    useEffect(() => {
+        refreshCodexAuthStatus();
+
+        let disposed = false;
+        const unlisteners: Array<() => void> = [];
+
+        const bindListeners = async () => {
+            const created = await Promise.all([
+                listen("codex-auth://success", (event) => {
+                    if (disposed) return;
+                    setCodexAuthStatus(event.payload as CodexAuthStatus);
+                    setTestResult(null);
+                    setIsAuthBusy(false);
+                }),
+                listen("codex-auth://error", (event) => {
+                    if (disposed) return;
+                    setIsAuthBusy(false);
+                    setTestResult({ success: false, message: String(event.payload) });
+                    refreshCodexAuthStatus();
+                }),
+                listen("codex-auth://logged-out", () => {
+                    if (disposed) return;
+                    setIsAuthBusy(false);
+                    setCodexAuthStatus({
+                        authenticated: false,
+                        login_in_progress: false,
+                    });
+                }),
+                listen("codex-auth://started", () => {
+                    if (disposed) return;
+                    setIsAuthBusy(false);
+                    setCodexAuthStatus((previous) => ({
+                        authenticated: previous?.authenticated ?? false,
+                        account_id: previous?.account_id ?? null,
+                        expires_at_ms: previous?.expires_at_ms ?? null,
+                        login_in_progress: true,
+                    }));
+                }),
+            ]);
+            unlisteners.push(...created);
+        };
+
+        bindListeners();
+
+        return () => {
+            disposed = true;
+            unlisteners.forEach((unlisten) => unlisten());
+        };
+    }, []);
 
     const applyProviderPresets = (presets: AIProviderPreset[]) => {
         const normalized = presets.length > 0 ? presets : [createProviderPreset()];
@@ -587,6 +722,7 @@ function AISettings({
                     return preset;
                 }
 
+                const nextProviderType = updates.providerType ?? preset.providerType;
                 const nextModels = updates.models ?? preset.models;
                 const nextSelectedModelId =
                     updates.selectedModelId && nextModels.some((model) => model.id === updates.selectedModelId)
@@ -598,6 +734,7 @@ function AISettings({
                 return {
                     ...preset,
                     ...updates,
+                    providerType: nextProviderType,
                     models: nextModels,
                     selectedModelId: nextSelectedModelId,
                 };
@@ -605,11 +742,53 @@ function AISettings({
         );
     };
 
+    const handleProviderTypeChange = (nextProviderType: AIProviderType) => {
+        const nextModels = resolveModelsForProviderSwitch(currentModels, currentProviderType, nextProviderType);
+        onProviderTypeChange(nextProviderType);
+        onModelsChange(nextModels);
+        onSelectedModelIdChange(nextModels[0]?.id || "");
+        onBaseUrlChange(nextProviderType === "codex_subscription" ? CODEX_BASE_URL : OPENAI_COMPATIBLE_BASE_URL);
+    };
+
+    const handlePresetProviderTypeChange = (preset: AIProviderPreset, nextProviderType: AIProviderType) => {
+        const nextModels = resolveModelsForProviderSwitch(preset.models, preset.providerType, nextProviderType);
+        updatePreset(preset.id, {
+            providerType: nextProviderType,
+            baseUrl: nextProviderType === "codex_subscription" ? CODEX_BASE_URL : OPENAI_COMPATIBLE_BASE_URL,
+            models: nextModels,
+            selectedModelId: nextModels[0]?.id || "",
+        });
+    };
+
+    const handleCodexLogin = async () => {
+        setIsAuthBusy(true);
+        setTestResult(null);
+        try {
+            await invoke("codex_start_login");
+        } catch (error) {
+            setIsAuthBusy(false);
+            setTestResult({ success: false, message: String(error) });
+        }
+    };
+
+    const handleCodexLogout = async () => {
+        setIsAuthBusy(true);
+        try {
+            await invoke("codex_logout");
+            await refreshCodexAuthStatus();
+        } catch (error) {
+            setTestResult({ success: false, message: String(error) });
+        } finally {
+            setIsAuthBusy(false);
+        }
+    };
+
     const handleTest = async () => {
         setIsTesting(true);
         setTestResult(null);
         try {
             const result = await invoke<string>("test_ai_connection", {
+                providerType: activeProviderType,
                 apiKey: activeApiKey,
                 baseUrl: activeBaseUrl,
                 modelId: selectedModelId,
@@ -639,6 +818,7 @@ function AISettings({
                                         const migratedPreset = createProviderPreset({
                                             id: "default-provider",
                                             name: "Default Provider",
+                                            providerType: currentProviderType,
                                             apiKey: currentKey,
                                             baseUrl: currentBaseUrl,
                                             models: currentModels,
@@ -660,35 +840,84 @@ function AISettings({
 
                     {!currentProviderPresetsEnabled ? (
                         <>
-                            <div className="space-y-2">
-                                <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                                    <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                    OpenAI API Key
-                                </label>
-                                <input
-                                    type="password"
-                                    value={currentKey}
-                                    onChange={(e) => onKeyChange(e.target.value)}
-                                    placeholder="sk-..."
-                                    className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                                />
-                                <p className="text-xs text-[var(--color-text-muted)]">Your API key is stored locally on this machine.</p>
-                            </div>
+                            <SettingRow label="Provider Type" description="Choose between API-key auth and your ChatGPT Codex subscription.">
+                                <select
+                                    value={currentProviderType}
+                                    onChange={(e) => handleProviderTypeChange(e.target.value as AIProviderType)}
+                                    className="min-w-64 bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
+                                >
+                                    {providerOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </SettingRow>
 
-                            <div className="space-y-2">
-                                <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                                    <Globe className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                    Base URL
-                                </label>
-                                <input
-                                    type="text"
-                                    value={currentBaseUrl}
-                                    onChange={(e) => onBaseUrlChange(e.target.value)}
-                                    placeholder="https://api.openai.com"
-                                    className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                                />
-                                <p className="text-xs text-[var(--color-text-muted)]">Change this if you use an OpenAI-compatible provider (e.g., OpenRouter).</p>
-                            </div>
+                            {currentProviderType === "openai_compatible" ? (
+                                <>
+                                    <div className="space-y-2">
+                                        <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                            <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                            OpenAI API Key
+                                        </label>
+                                        <input
+                                            type="password"
+                                            value={currentKey}
+                                            onChange={(e) => onKeyChange(e.target.value)}
+                                            placeholder="sk-..."
+                                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                        />
+                                        <p className="text-xs text-[var(--color-text-muted)]">Your API key is stored locally on this machine.</p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                            <Globe className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                            Base URL
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={currentBaseUrl}
+                                            onChange={(e) => onBaseUrlChange(e.target.value)}
+                                            placeholder="https://api.openai.com"
+                                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                        />
+                                        <p className="text-xs text-[var(--color-text-muted)]">Change this if you use an OpenAI-compatible provider (e.g., OpenRouter).</p>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-void-850)] p-4 space-y-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-sm font-medium text-[var(--color-text-primary)]">ChatGPT OAuth</p>
+                                            <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                                                Sign in with your ChatGPT account to use your Codex subscription inside VoiDesk.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={codexAuthStatus?.authenticated ? handleCodexLogout : handleCodexLogin}
+                                            disabled={isAuthBusy || codexAuthStatus?.login_in_progress}
+                                            className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {(isAuthBusy || codexAuthStatus?.login_in_progress) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                            {codexAuthStatus?.authenticated ? "Log Out" : "Sign in with ChatGPT"}
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                        <div className="rounded-lg bg-[var(--color-void-800)] px-3 py-2">
+                                            <span className="text-[var(--color-text-muted)]">Status</span>
+                                            <p className="mt-1 text-[var(--color-text-primary)]">
+                                                {codexAuthStatus?.authenticated ? "Authenticated" : codexAuthStatus?.login_in_progress ? "Waiting for browser login" : "Not signed in"}
+                                            </p>
+                                        </div>
+                                        <div className="rounded-lg bg-[var(--color-void-800)] px-3 py-2">
+                                            <span className="text-[var(--color-text-muted)]">Account</span>
+                                            <p className="mt-1 text-[var(--color-text-primary)] break-all">{codexAuthStatus?.account_id || "Unavailable"}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="space-y-2">
                                 <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
@@ -820,33 +1049,77 @@ function AISettings({
                                             )}
                                         </div>
 
-                                        <div className="space-y-2">
-                                            <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                                                <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                                API Key
-                                            </label>
-                                            <input
-                                                type="password"
-                                                value={preset.apiKey}
-                                                onChange={(e) => updatePreset(preset.id, { apiKey: e.target.value })}
-                                                placeholder="sk-..."
-                                                className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                                            />
-                                        </div>
+                                        <SettingRow label="Provider Type" description="Select how this preset authenticates.">
+                                            <select
+                                                value={preset.providerType}
+                                                onChange={(e) => handlePresetProviderTypeChange(preset, e.target.value as AIProviderType)}
+                                                className="min-w-64 bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
+                                            >
+                                                {providerOptions.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </SettingRow>
 
-                                        <div className="space-y-2">
-                                            <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                                                <Globe className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                                Base URL
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={preset.baseUrl}
-                                                onChange={(e) => updatePreset(preset.id, { baseUrl: e.target.value })}
-                                                placeholder="https://api.openai.com"
-                                                className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                                            />
-                                        </div>
+                                        {preset.providerType === "openai_compatible" ? (
+                                            <>
+                                                <div className="space-y-2">
+                                                    <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                                        <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                                        API Key
+                                                    </label>
+                                                    <input
+                                                        type="password"
+                                                        value={preset.apiKey}
+                                                        onChange={(e) => updatePreset(preset.id, { apiKey: e.target.value })}
+                                                        placeholder="sk-..."
+                                                        className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                                    />
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                                        <Globe className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                                        Base URL
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={preset.baseUrl}
+                                                        onChange={(e) => updatePreset(preset.id, { baseUrl: e.target.value })}
+                                                        placeholder="https://api.openai.com"
+                                                        className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                                    />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-800)] p-3 space-y-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-medium text-[var(--color-text-primary)]">ChatGPT OAuth</p>
+                                                        <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                                                            Shared app login used by all Codex presets.
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={codexAuthStatus?.authenticated ? handleCodexLogout : handleCodexLogin}
+                                                        disabled={isAuthBusy || codexAuthStatus?.login_in_progress}
+                                                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {(isAuthBusy || codexAuthStatus?.login_in_progress) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                                        {codexAuthStatus?.authenticated ? "Log Out" : "Sign in with ChatGPT"}
+                                                    </button>
+                                                </div>
+                                                <div className="text-xs text-[var(--color-text-secondary)]">
+                                                    {codexAuthStatus?.authenticated
+                                                        ? `Authenticated as ${codexAuthStatus.account_id || "unknown account"}`
+                                                        : codexAuthStatus?.login_in_progress
+                                                            ? "Waiting for browser login to complete."
+                                                            : "Not authenticated yet."}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         <div className="space-y-2">
                                             <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
@@ -980,7 +1253,7 @@ function AISettings({
                     <div className="flex items-center gap-3 pt-4">
                         <button
                             onClick={handleTest}
-                            disabled={isTesting || !activeApiKey}
+                            disabled={isTesting || (isCodexActive ? !codexAuthStatus?.authenticated : !activeApiKey)}
                             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-700)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-600)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Test Connection"}

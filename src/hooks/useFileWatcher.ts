@@ -49,6 +49,11 @@ export function useFileWatcher() {
                 path,
                 maxDepth: 5,
             });
+
+            if (useFileStore.getState().rootPath !== path) {
+                return;
+            }
+
             const fileNodes = tree.map(convertToFileNode);
             setFileTree(fileNodes);
         } catch (error) {
@@ -66,9 +71,9 @@ export function useFileWatcher() {
             // Set up event listener first
             unlistenRef.current = await listen<FileChangeEvent>("file-change", (event) => {
                 console.log("File change detected:", event.payload);
-                // Refresh the file tree when changes are detected
-                if (rootPath) {
-                    refreshFileTree(rootPath);
+                const currentRootPath = useFileStore.getState().rootPath;
+                if (currentRootPath) {
+                    refreshFileTree(currentRootPath);
                 }
             });
 
@@ -79,7 +84,7 @@ export function useFileWatcher() {
         } catch (error) {
             console.error("Failed to start file watcher:", error);
         }
-    }, [rootPath, refreshFileTree]);
+    }, [refreshFileTree]);
 
     // Stop watching
     const stopWatching = useCallback(async () => {

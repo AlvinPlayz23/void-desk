@@ -17,7 +17,11 @@ pub struct OpenAICompatibleConfig {
 }
 
 impl OpenAICompatibleConfig {
-    pub fn new(api_key: impl Into<String>, base_url: impl Into<String>, model: impl Into<String>) -> Self {
+    pub fn new(
+        api_key: impl Into<String>,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
         Self {
             api_key: api_key.into(),
             base_url: base_url.into(),
@@ -88,9 +92,9 @@ impl OpenAICompatibleConfig {
         V: TryInto<HeaderValue>,
         V::Error: Into<reqwest::header::InvalidHeaderValue>,
     {
-        let header_value = value.try_into().map_err(|error| {
-            anyhow::anyhow!("invalid header value: {}", error.into())
-        })?;
+        let header_value = value
+            .try_into()
+            .map_err(|error| anyhow::anyhow!("invalid header value: {}", error.into()))?;
         self.default_headers.insert(key, header_value);
         Ok(self)
     }
@@ -107,10 +111,7 @@ impl OpenAICompatibleConfig {
             provider_id: provider_id.to_string(),
             context_window: self.context_window.or(inferred_context_window),
             max_output_tokens: self.max_output_tokens,
-            capabilities: self
-                .capabilities
-                .clone()
-                .unwrap_or(inferred_capabilities),
+            capabilities: self.capabilities.clone().unwrap_or(inferred_capabilities),
         }
     }
 }

@@ -16,9 +16,12 @@ export interface AIModelConfig {
     supportsImages: boolean;
 }
 
+export type AIProviderType = "openai_compatible" | "codex_subscription";
+
 export interface AIProviderPreset {
     id: string;
     name: string;
+    providerType: AIProviderType;
     apiKey: string;
     baseUrl: string;
     models: AIModelConfig[];
@@ -27,6 +30,7 @@ export interface AIProviderPreset {
 
 export interface ActiveAISettings {
     providerPresetsEnabled: boolean;
+    providerType: AIProviderType;
     apiKey: string;
     baseUrl: string;
     aiModels: AIModelConfig[];
@@ -43,9 +47,33 @@ const FALLBACK_AI_MODEL: AIModelConfig = {
 
 const FALLBACK_AI_MODELS: AIModelConfig[] = [FALLBACK_AI_MODEL];
 
+const DEFAULT_CODEX_MODELS: AIModelConfig[] = [
+    {
+        id: "gpt-5.4",
+        name: "gpt-5.4",
+        supportsImages: false,
+    },
+    {
+        id: "gpt-5.4-mini",
+        name: "gpt-5.4-mini",
+        supportsImages: false,
+    },
+    {
+        id: "gpt-5.3-codex",
+        name: "gpt-5.3-codex",
+        supportsImages: false,
+    },
+    {
+        id: "gpt-5.1-codex-mini",
+        name: "gpt-5.1-codex-mini",
+        supportsImages: false,
+    },
+];
+
 const FALLBACK_PROVIDER_PRESET: AIProviderPreset = {
     id: "default-provider",
     name: "Default Provider",
+    providerType: "openai_compatible",
     apiKey: "",
     baseUrl: "https://api.openai.com",
     models: FALLBACK_AI_MODELS,
@@ -68,6 +96,7 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
 
 interface SettingsState {
     // AI Settings
+    providerType: AIProviderType;
     openAIKey: string;
     openAIBaseUrl: string;
     aiModels: AIModelConfig[];
@@ -94,6 +123,7 @@ interface SettingsState {
     keybindings: KeyBinding[];
 
     // Actions - AI
+    setProviderType: (providerType: AIProviderType) => void;
     setOpenAIKey: (key: string) => void;
     setOpenAIBaseUrl: (url: string) => void;
     setAIModels: (models: AIModelConfig[]) => void;
@@ -130,10 +160,32 @@ interface SettingsState {
 }
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com";
+const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
+
+export const getDefaultModelsForProviderType = (providerType: AIProviderType): AIModelConfig[] =>
+    providerType === "codex_subscription"
+        ? DEFAULT_CODEX_MODELS.map((model) => ({ ...model }))
+        : [createDefaultAIModel()];
 
 export const createDefaultAIModel = (): AIModelConfig => ({
     ...FALLBACK_AI_MODEL,
 });
+
+export const isProviderType = (value: unknown): value is AIProviderType =>
+    value === "openai_compatible" || value === "codex_subscription";
+
+export const modelsMatchProviderDefaults = (
+    models: AIModelConfig[],
+    providerType: AIProviderType
+): boolean => {
+    const defaults = getDefaultModelsForProviderType(providerType);
+    return models.length === defaults.length
+        && models.every((model, index) =>
+            model.id === defaults[index]?.id
+            && model.name === defaults[index]?.name
+            && model.supportsImages === defaults[index]?.supportsImages
+        );
+};
 
 export const normalizeAIModels = (models: unknown): AIModelConfig[] => {
     if (!Array.isArray(models) || models.length === 0) {
@@ -153,7 +205,10 @@ export const normalizeAIModels = (models: unknown): AIModelConfig[] => {
 };
 
 export const createProviderPreset = (overrides: Partial<AIProviderPreset> = {}): AIProviderPreset => {
-    const models = normalizeAIModels(overrides.models);
+    const providerType = isProviderType(overrides.providerType) ? overrides.providerType : "openai_compatible";
+    const models = Array.isArray(overrides.models) && overrides.models.length > 0
+        ? normalizeAIModels(overrides.models)
+        : getDefaultModelsForProviderType(providerType);
     const selectedModelId =
         typeof overrides.selectedModelId === "string" && models.some((model) => model.id === overrides.selectedModelId)
             ? overrides.selectedModelId
@@ -162,8 +217,9 @@ export const createProviderPreset = (overrides: Partial<AIProviderPreset> = {}):
     return {
         id: overrides.id || `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: overrides.name || "New Preset",
+        providerType,
         apiKey: overrides.apiKey || "",
-        baseUrl: overrides.baseUrl || DEFAULT_OPENAI_BASE_URL,
+        baseUrl: overrides.baseUrl || (providerType === "codex_subscription" ? DEFAULT_CODEX_BASE_URL : DEFAULT_OPENAI_BASE_URL),
         models,
         selectedModelId,
     };
@@ -186,8 +242,9 @@ const normalizeProviderPresets = (presets: unknown): AIProviderPreset[] => {
         return createProviderPreset({
             id: typeof raw?.id === "string" && raw.id.trim() ? raw.id : `preset-${index + 1}`,
             name: typeof raw?.name === "string" ? raw.name : `Preset ${index + 1}`,
+            providerType: isProviderType(raw?.providerType) ? raw.providerType : undefined,
             apiKey: typeof raw?.apiKey === "string" ? raw.apiKey : "",
-            baseUrl: typeof raw?.baseUrl === "string" && raw.baseUrl.trim() ? raw.baseUrl : DEFAULT_OPENAI_BASE_URL,
+            baseUrl: typeof raw?.baseUrl === "string" && raw.baseUrl.trim() ? raw.baseUrl : undefined,
             models: raw?.models,
             selectedModelId: typeof raw?.selectedModelId === "string" ? raw.selectedModelId : undefined,
         });
@@ -204,6 +261,7 @@ const normalizeSelectedProviderPresetId = (selectedProviderPresetId: unknown, pr
 };
 
 const getDefaultState = () => ({
+    providerType: "openai_compatible" as AIProviderType,
     openAIKey: "",
     openAIBaseUrl: DEFAULT_OPENAI_BASE_URL,
     aiModels: [createDefaultAIModel()],
@@ -226,7 +284,7 @@ const getDefaultState = () => ({
 
 export const selectActiveAISettings = (state: Pick<
     SettingsState,
-    "openAIKey" | "openAIBaseUrl" | "aiModels" | "selectedModelId" | "providerPresetsEnabled" | "providerPresets" | "selectedProviderPresetId"
+    "providerType" | "openAIKey" | "openAIBaseUrl" | "aiModels" | "selectedModelId" | "providerPresetsEnabled" | "providerPresets" | "selectedProviderPresetId"
 >): ActiveAISettings => {
     const presets = state.providerPresets.length > 0 ? state.providerPresets : FALLBACK_PROVIDER_PRESETS;
     const legacyModels = state.aiModels.length > 0 ? state.aiModels : FALLBACK_AI_MODELS;
@@ -241,6 +299,7 @@ export const selectActiveAISettings = (state: Pick<
 
     return {
         providerPresetsEnabled: state.providerPresetsEnabled,
+        providerType: activePreset?.providerType || state.providerType || "openai_compatible",
         apiKey: activePreset?.apiKey || state.openAIKey,
         baseUrl: activePreset?.baseUrl || state.openAIBaseUrl || DEFAULT_OPENAI_BASE_URL,
         aiModels,
@@ -265,6 +324,29 @@ export const useSettingsStore = create<SettingsState>()(
             ...getDefaultState(),
 
             // Actions - AI
+            setProviderType: (providerType) => set((state) => {
+                const normalizedProviderType = isProviderType(providerType) ? providerType : "openai_compatible";
+                const shouldReplaceModels =
+                    normalizedProviderType !== state.providerType
+                    || !Array.isArray(state.aiModels)
+                    || state.aiModels.length === 0
+                    || modelsMatchProviderDefaults(state.aiModels, state.providerType)
+                    || modelsMatchProviderDefaults(state.aiModels, normalizedProviderType);
+                const aiModels = shouldReplaceModels
+                    ? getDefaultModelsForProviderType(normalizedProviderType)
+                    : state.aiModels;
+                const selectedModelId = aiModels.some((model) => model.id === state.selectedModelId)
+                    ? state.selectedModelId
+                    : aiModels[0]?.id || "";
+                return {
+                    providerType: normalizedProviderType,
+                    openAIBaseUrl: normalizedProviderType === "codex_subscription" && !state.openAIBaseUrl
+                        ? DEFAULT_CODEX_BASE_URL
+                        : state.openAIBaseUrl,
+                    aiModels,
+                    selectedModelId,
+                };
+            }),
             setOpenAIKey: (key) => set({ openAIKey: key }),
             setOpenAIBaseUrl: (url) => set({ openAIBaseUrl: url }),
             setAIModels: (models) => set((state) => {
@@ -370,7 +452,7 @@ export const useSettingsStore = create<SettingsState>()(
         }),
         {
             name: "voidesk-settings",
-            version: 3,
+            version: 4,
             migrate: (persistedState: any, version: number) => {
                 if (!persistedState) {
                     return getDefaultState();
@@ -381,6 +463,10 @@ export const useSettingsStore = create<SettingsState>()(
                     ...getDefaultState(),
                     ...state,
                 };
+
+                nextState.providerType = isProviderType(nextState.providerType)
+                    ? nextState.providerType
+                    : "openai_compatible";
 
                 nextState.aiModels = normalizeAIModels(nextState.aiModels);
                 nextState.selectedModelId = nextState.aiModels.some((model: AIModelConfig) => model.id === nextState.selectedModelId)
@@ -393,6 +479,7 @@ export const useSettingsStore = create<SettingsState>()(
                         createProviderPreset({
                             id: "default-provider",
                             name: "Default Provider",
+                            providerType: nextState.providerType,
                             apiKey: nextState.openAIKey || "",
                             baseUrl: nextState.openAIBaseUrl || DEFAULT_OPENAI_BASE_URL,
                             models: nextState.aiModels,

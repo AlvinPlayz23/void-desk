@@ -872,7 +872,9 @@ function PromptComposer(props: PromptComposerProps) {
                                             <div className="truncate font-medium">
                                                 {preset.name || "Unnamed preset"}
                                             </div>
-                                            <div className="text-[10px] text-[var(--color-text-muted)] truncate">{preset.baseUrl}</div>
+                                            <div className="text-[10px] text-[var(--color-text-muted)] truncate">
+                                                {preset.providerType === "codex_subscription" ? "ChatGPT OAuth (Codex)" : preset.baseUrl}
+                                            </div>
                                         </button>
                                     ))}
                                     {providerPresetsEnabled && showModelMenu && (
@@ -1090,7 +1092,7 @@ const ToolOperationDisplay = memo(function ToolOperationDisplay({ operations }: 
 function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: number; type: string; message: string }[]; clearDebugLogs: () => void }) {
     const [testOutput, setTestOutput] = useState<string>("");
     const [testLoading, setTestLoading] = useState(false);
-    const { apiKey, baseUrl, selectedModelId, aiModels } = useSettingsStore(useShallow(selectActiveAISettings));
+    const { providerType, apiKey, baseUrl, selectedModelId, aiModels } = useSettingsStore(useShallow(selectActiveAISettings));
     const rawStreamLoggingEnabled = useSettingsStore((state) => state.rawStreamLoggingEnabled);
     const setRawStreamLoggingEnabled = useSettingsStore((state) => state.setRawStreamLoggingEnabled);
     const modelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
@@ -1117,6 +1119,7 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
         setTestOutput("Running tool call test...\n");
         try {
             const result = await invoke<string>("debug_tool_call", {
+                providerType,
                 apiKey,
                 baseUrl,
                 modelId,
@@ -1133,6 +1136,7 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
         setTestOutput("Running stream test...\n");
         try {
             const result = await invoke<string>("debug_stream_response", {
+                providerType,
                 apiKey,
                 baseUrl,
                 modelId,
@@ -1150,6 +1154,7 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
         try {
             const rootPath = useFileStore.getState().rootPath;
             const result = await invoke<string>("debug_agent_flow", {
+                providerType,
                 apiKey,
                 baseUrl,
                 modelId,

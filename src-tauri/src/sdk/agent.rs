@@ -631,12 +631,14 @@ fn register_self_correction_attempt(
 }
 
 fn messages_include_inline_images(messages: &[Message]) -> bool {
-    messages.iter().any(|message| match message.content.as_ref() {
-        Some(MessageContent::Multipart(parts)) => parts
-            .iter()
-            .any(|part| matches!(part, MessagePart::Image { .. })),
-        _ => false,
-    })
+    messages
+        .iter()
+        .any(|message| match message.content.as_ref() {
+            Some(MessageContent::Multipart(parts)) => parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::Image { .. })),
+            _ => false,
+        })
 }
 
 async fn wait_for_cancellation(cancel_flag: Arc<AtomicBool>) {

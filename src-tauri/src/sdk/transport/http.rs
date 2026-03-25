@@ -7,9 +7,7 @@ use tokio::time::{sleep, Duration};
 
 use crate::sdk::core::SdkError;
 
-const RETRY_DELAY_MS: &[u64] = &[
-    0, 1_000, 3_000, 5_000,
-];
+const RETRY_DELAY_MS: &[u64] = &[0, 1_000, 3_000, 5_000];
 
 #[derive(Debug, Clone)]
 pub struct TransportConfig {

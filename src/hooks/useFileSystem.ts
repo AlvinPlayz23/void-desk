@@ -79,10 +79,21 @@ export function useFileSystem() {
                 maxDepth: 5,
             });
 
+            if (useFileStore.getState().rootPath !== path) {
+                return;
+            }
+
             const fileNodes = tree.map(convertToFileNode);
             setFileTree(fileNodes);
         } catch (error) {
             console.error("Failed to get project tree:", error);
+        }
+    };
+
+    const refreshCurrentFileTree = async (): Promise<void> => {
+        const currentRootPath = useFileStore.getState().rootPath;
+        if (currentRootPath) {
+            await refreshFileTree(currentRootPath);
         }
     };
 
@@ -110,10 +121,7 @@ export function useFileSystem() {
     const writeFile = async (path: string, content: string): Promise<boolean> => {
         try {
             await invoke("write_file", { path, content });
-            // Auto-refresh to show newly created files
-            if (rootPath) {
-                await refreshFileTree(rootPath);
-            }
+            await refreshCurrentFileTree();
             return true;
         } catch (error) {
             console.error("Failed to write file:", error);
@@ -125,10 +133,7 @@ export function useFileSystem() {
     const deleteFile = async (path: string): Promise<boolean> => {
         try {
             await invoke("delete_file", { path });
-            // Auto-refresh to remove deleted files from view
-            if (rootPath) {
-                await refreshFileTree(rootPath);
-            }
+            await refreshCurrentFileTree();
             return true;
         } catch (error) {
             console.error("Failed to delete file:", error);
@@ -180,10 +185,7 @@ export function useFileSystem() {
     const createNewFolder = async (parentPath: string, folderName: string): Promise<boolean> => {
         try {
             await invoke("create_directory", { path: `${parentPath}/${folderName}` });
-            // Auto-refresh to show newly created folder
-            if (rootPath) {
-                await refreshFileTree(rootPath);
-            }
+            await refreshCurrentFileTree();
             return true;
         } catch (error) {
             console.error("Failed to create folder:", error);
@@ -194,9 +196,7 @@ export function useFileSystem() {
     const moveItem = async (fromPath: string, toPath: string): Promise<boolean> => {
         try {
             await invoke("move_file", { from: fromPath, to: toPath });
-            if (rootPath) {
-                await refreshFileTree(rootPath);
-            }
+            await refreshCurrentFileTree();
             return true;
         } catch (error) {
             console.error("Failed to move item:", error);
@@ -207,9 +207,7 @@ export function useFileSystem() {
     const renameFile = async (oldPath: string, newPath: string): Promise<boolean> => {
         try {
             await invoke("rename_file", { oldPath, newPath });
-            if (rootPath) {
-                await refreshFileTree(rootPath);
-            }
+            await refreshCurrentFileTree();
             return true;
         } catch (error) {
             console.error("Failed to rename file:", error);
@@ -226,9 +224,7 @@ export function useFileSystem() {
     const batchDeleteFiles = async (paths: string[]): Promise<BatchOperationResult[]> => {
         try {
             const results = await invoke<BatchOperationResult[]>("batch_delete_files", { paths });
-            if (rootPath) {
-                await refreshFileTree(rootPath);
-            }
+            await refreshCurrentFileTree();
             return results;
         } catch (error) {
             console.error("Failed to batch delete files:", error);
@@ -248,9 +244,7 @@ export function useFileSystem() {
     const batchMoveFiles = async (operations: BatchMoveOperation[]): Promise<BatchOperationResult[]> => {
         try {
             const results = await invoke<BatchOperationResult[]>("batch_move_files", { operations });
-            if (rootPath) {
-                await refreshFileTree(rootPath);
-            }
+            await refreshCurrentFileTree();
             return results;
         } catch (error) {
             console.error("Failed to batch move files:", error);

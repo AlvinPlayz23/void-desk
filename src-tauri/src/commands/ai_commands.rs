@@ -3,6 +3,7 @@
 //! This module provides Tauri commands for AI interactions using the custom SDK.
 
 use super::ai_service::AIService;
+use super::codex_auth::CodexAuthState;
 use crate::sdk::{
     AgentEvent, AgentRunHandle, ErrorCategory, InlineImageAttachment, Message, SdkError,
 };
@@ -69,14 +70,20 @@ pub struct ConversationHistoryMessage {
 
 #[tauri::command]
 pub async fn test_ai_connection(
+    provider_type: Option<String>,
     api_key: String,
     base_url: String,
     model_id: String,
+    codex_auth: State<'_, CodexAuthState>,
 ) -> Result<String, String> {
+    let provider_type = provider_type
+        .as_deref()
+        .unwrap_or("openai_compatible")
+        .trim();
     let api_key = api_key.trim();
     let model_id = model_id.trim();
 
-    if api_key.is_empty() {
+    if provider_type != "codex_subscription" && api_key.is_empty() {
         return Err("API key is required".to_string());
     }
 
@@ -84,8 +91,15 @@ pub async fn test_ai_connection(
         return Err("Model ID is required".to_string());
     }
 
-    let agent = AIService::create_agent(api_key, &base_url, model_id, None)
-        .map_err(|e| format!("Failed to create agent: {}", e))?;
+    let agent = AIService::create_agent(
+        provider_type,
+        api_key,
+        &base_url,
+        model_id,
+        None,
+        Some(codex_auth.auth_path()),
+    )
+    .map_err(|e| format!("Failed to create agent: {}", e))?;
 
     let result = agent
         .run("Say 'Connection Successful'".to_string(), Vec::new())
@@ -103,6 +117,7 @@ pub async fn test_ai_connection(
 pub async fn ask_ai_stream(
     message: String,
     history_messages: Option<Vec<ConversationHistoryMessage>>,
+    provider_type: Option<String>,
     api_key: String,
     base_url: String,
     model_id: String,
@@ -112,6 +127,7 @@ pub async fn ask_ai_stream(
     request_id: Option<String>,
     on_event: Channel<AIResponseChunk>,
     service: State<'_, AIService>,
+    codex_auth: State<'_, CodexAuthState>,
 ) -> Result<(), String> {
     let session_id = service
         .get_or_create_session("default_user")
@@ -121,6 +137,7 @@ pub async fn ask_ai_stream(
     let req = StreamRequest {
         message,
         history_messages,
+        provider_type: provider_type.unwrap_or_else(|| "openai_compatible".to_string()),
         api_key,
         base_url,
         model_id,
@@ -131,6 +148,7 @@ pub async fn ask_ai_stream(
         image_attachments: None,
         session_id,
         on_event,
+        codex_auth_path: codex_auth.auth_path(),
     };
     process_ai_stream(req, service.inner()).await
 }
@@ -156,7 +174,9 @@ pub async fn cancel_ai_stream(request_id: String) -> Result<bool, String> {
     let runs = active_runs().await;
     let handle = {
         let map = runs.read().await;
-        map.request_runs.get(&request_id).map(|entry| entry.handle.clone())
+        map.request_runs
+            .get(&request_id)
+            .map(|entry| entry.handle.clone())
     };
 
     if let Some(handle) = handle {
@@ -186,15 +206,21 @@ pub async fn get_inline_completion(
     cursor_pos: usize,
     file_path: String,
     language: String,
+    provider_type: Option<String>,
     api_key: String,
     base_url: String,
     model_id: String,
     on_event: Channel<InlineCompletionChunk>,
+    codex_auth: State<'_, CodexAuthState>,
 ) -> Result<(), String> {
+    let provider_type = provider_type
+        .as_deref()
+        .unwrap_or("openai_compatible")
+        .trim();
     let api_key = api_key.trim();
     let model_id = model_id.trim();
 
-    if api_key.is_empty() {
+    if provider_type != "codex_subscription" && api_key.is_empty() {
         on_event
             .send(InlineCompletionChunk {
                 text: String::new(),
@@ -239,9 +265,16 @@ Generate a short, contextually appropriate completion (1-3 lines max). Output ON
         after = after
     );
 
-    let agent = AIService::create_agent(api_key, &base_url, model_id, None)
-        .map_err(|e| format!("Failed to create agent: {}", e))?
-        .with_max_iterations(1);
+    let agent = AIService::create_agent(
+        provider_type,
+        api_key,
+        &base_url,
+        model_id,
+        None,
+        Some(codex_auth.auth_path()),
+    )
+    .map_err(|e| format!("Failed to create agent: {}", e))?
+    .with_max_iterations(1);
 
     let mut stream = agent
         .run_streaming(prompt, Vec::new())
@@ -306,7 +339,9 @@ pub async fn create_chat_session(
 }
 
 #[tauri::command]
-pub async fn list_chat_sessions(service: State<'_, AIService>) -> Result<Vec<SessionMetadata>, String> {
+pub async fn list_chat_sessions(
+    service: State<'_, AIService>,
+) -> Result<Vec<SessionMetadata>, String> {
     let sessions = service.session_store().list().await;
     let metadata = sessions
         .into_iter()
@@ -348,6 +383,7 @@ pub async fn ask_ai_stream_with_session(
     session_id: String,
     message: String,
     history_messages: Option<Vec<ConversationHistoryMessage>>,
+    provider_type: Option<String>,
     api_key: String,
     base_url: String,
     model_id: String,
@@ -358,6 +394,7 @@ pub async fn ask_ai_stream_with_session(
     image_attachments: Option<Vec<InlineImageAttachment>>,
     on_event: Channel<AIResponseChunk>,
     service: State<'_, AIService>,
+    codex_auth: State<'_, CodexAuthState>,
 ) -> Result<(), String> {
     let session_id = if session_id.trim().is_empty() {
         service
@@ -374,6 +411,7 @@ pub async fn ask_ai_stream_with_session(
     let req = StreamRequest {
         message,
         history_messages,
+        provider_type: provider_type.unwrap_or_else(|| "openai_compatible".to_string()),
         api_key,
         base_url,
         model_id,
@@ -384,6 +422,7 @@ pub async fn ask_ai_stream_with_session(
         image_attachments,
         session_id,
         on_event,
+        codex_auth_path: codex_auth.auth_path(),
     };
     process_ai_stream(req, service.inner()).await
 }
@@ -391,6 +430,7 @@ pub async fn ask_ai_stream_with_session(
 struct StreamRequest {
     message: String,
     history_messages: Option<Vec<ConversationHistoryMessage>>,
+    provider_type: String,
     api_key: String,
     base_url: String,
     model_id: String,
@@ -401,9 +441,11 @@ struct StreamRequest {
     image_attachments: Option<Vec<InlineImageAttachment>>,
     session_id: String,
     on_event: Channel<AIResponseChunk>,
+    codex_auth_path: std::path::PathBuf,
 }
 
 async fn process_ai_stream(req: StreamRequest, service: &AIService) -> Result<(), String> {
+    let provider_type = req.provider_type.trim();
     let api_key = req.api_key.trim();
     let model_id = req.model_id.trim();
     let request_id = req
@@ -412,7 +454,7 @@ async fn process_ai_stream(req: StreamRequest, service: &AIService) -> Result<()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    if api_key.is_empty() {
+    if provider_type != "codex_subscription" && api_key.is_empty() {
         send_error_chunk(
             &req.on_event,
             "API key is required".to_string(),
@@ -471,23 +513,25 @@ async fn process_ai_stream(req: StreamRequest, service: &AIService) -> Result<()
     )?;
 
     let build = match AIService::create_agent_build(
+        provider_type,
         api_key,
         &req.base_url,
         model_id,
         req.active_path.as_deref(),
+        Some(req.codex_auth_path.clone()),
     ) {
         Ok(build) => build,
-            Err(err) => {
-                send_error_chunk(
-                    &req.on_event,
-                    format!("Failed to create agent: {}", err),
-                    "internal",
-                    None,
-                    Some(false),
-                )?;
-                return Ok(());
-            }
-        };
+        Err(err) => {
+            send_error_chunk(
+                &req.on_event,
+                format!("Failed to create agent: {}", err),
+                "internal",
+                None,
+                Some(false),
+            )?;
+            return Ok(());
+        }
+    };
     let model_context_window = build.model_info.context_window;
     let effective_context_window =
         resolve_effective_context_window(req.context_window_tokens, model_context_window);
@@ -572,7 +616,9 @@ async fn process_ai_stream(req: StreamRequest, service: &AIService) -> Result<()
         }
     };
 
-    if let Some(existing_request_id) = register_active_run(&request_id, &req.session_id, run_handle).await? {
+    if let Some(existing_request_id) =
+        register_active_run(&request_id, &req.session_id, run_handle).await?
+    {
         send_error_chunk(
             &req.on_event,
             format!(

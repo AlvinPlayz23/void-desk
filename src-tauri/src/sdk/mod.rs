@@ -29,8 +29,7 @@ pub use session::{Session, SessionStore};
 // Core type re-exports
 pub use core::errors::{ErrorCategory, SdkError};
 pub use core::events::{
-    AgentEvent, CancelledEvent, DebugEvent, DoneEvent, StreamEvent, ToolResultEvent,
-    ToolStartEvent,
+    AgentEvent, CancelledEvent, DebugEvent, DoneEvent, StreamEvent, ToolResultEvent, ToolStartEvent,
 };
 pub use core::types::{
     ChatRequest, ChatResponse, Choice, ImageUrl, InlineImageAttachment, Message, MessageContent,
@@ -40,7 +39,8 @@ pub use core::types::{
 
 // Provider re-exports
 pub use provider::{
-    ModelCapabilities, ModelInfo, OpenAICompatibleConfig, OpenAICompatibleProvider, Provider,
+    CodexSubscriptionProvider, ModelCapabilities, ModelInfo, OpenAICompatibleConfig,
+    OpenAICompatibleProvider, Provider,
 };
 
 // Tools re-exports

@@ -6,7 +6,7 @@ import { selectActiveAISettings, useSettingsStore } from "@/stores/settingsStore
 export function AIDebug() {
     const [output, setOutput] = useState<string>("");
     const [loading, setLoading] = useState(false);
-    const { apiKey, baseUrl, selectedModelId, aiModels } = useSettingsStore(useShallow(selectActiveAISettings));
+    const { providerType, apiKey, baseUrl, selectedModelId, aiModels } = useSettingsStore(useShallow(selectActiveAISettings));
     const modelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
 
     const runDebugToolCall = async () => {
@@ -14,6 +14,7 @@ export function AIDebug() {
         setOutput("Running debug_tool_call...\n");
         try {
             const result = await invoke<string>("debug_tool_call", {
+                providerType,
                 apiKey,
                 baseUrl,
                 modelId,
@@ -30,6 +31,7 @@ export function AIDebug() {
         setOutput("Running debug_stream_response...\n");
         try {
             const result = await invoke<string>("debug_stream_response", {
+                providerType,
                 apiKey,
                 baseUrl,
                 modelId,
@@ -63,7 +65,7 @@ export function AIDebug() {
             </div>
 
             <div className="text-sm text-zinc-400 mb-2">
-                API: {baseUrl} | Model: {modelId}
+                Provider: {providerType} | API: {baseUrl} | Model: {modelId}
             </div>
 
             <pre className="flex-1 overflow-auto bg-black p-4 rounded text-xs font-mono whitespace-pre-wrap">

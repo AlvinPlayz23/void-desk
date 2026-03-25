@@ -4,6 +4,7 @@ pub mod ai_service;
 pub mod ai_tools;
 pub mod attachment_commands;
 pub mod chat_storage;
+pub mod codex_auth;
 pub mod file_commands;
 pub mod file_watcher;
 pub mod lsp_commands;

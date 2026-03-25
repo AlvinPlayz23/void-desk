@@ -1,6 +1,7 @@
 //! AI Debug Commands - For testing and debugging AI API calls
 
 use crate::commands::ai_service::AIService;
+use crate::commands::codex_auth::CodexAuthState;
 use crate::sdk::AgentEvent;
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
@@ -300,10 +301,12 @@ pub async fn debug_stream_response(
 /// Debug the full agent flow including tool execution
 #[tauri::command]
 pub async fn debug_agent_flow(
+    provider_type: Option<String>,
     api_key: String,
     base_url: String,
     model_id: String,
     project_path: Option<String>,
+    codex_auth: tauri::State<'_, CodexAuthState>,
 ) -> Result<String, String> {
     let mut logs = Vec::new();
 
@@ -313,10 +316,15 @@ pub async fn debug_agent_flow(
 
     // Create agent with tools
     let agent = AIService::create_agent(
+        provider_type
+            .as_deref()
+            .unwrap_or("openai_compatible")
+            .trim(),
         api_key.trim(),
         &base_url,
         model_id.trim(),
         project_path.as_deref(),
+        Some(codex_auth.auth_path()),
     )
     .map_err(|e| format!("Failed to create agent: {}", e))?;
 

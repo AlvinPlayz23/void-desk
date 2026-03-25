@@ -311,7 +311,7 @@ export function useAI() {
 
             const imageAttachmentCount = attachments.filter((attachment) => attachment.kind === "image").length;
             const textAttachmentCount = attachments.length - imageAttachmentCount;
-            const { apiKey, baseUrl, aiModels, selectedModelId } = activeAISettings;
+            const { providerType, apiKey, baseUrl, aiModels, selectedModelId } = activeAISettings;
             const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
             const activeModel = aiModels.find((model) => model.id === activeModelId);
             const activeModelSupportsImages = activeModel?.supportsImages ?? false;
@@ -561,8 +561,9 @@ export function useAI() {
                         if (chunk.tool_operation.status === "completed") {
                             const changedOps = ["Writing", "Created", "Edited", "Executed", "Deleted"];
                             if (changedOps.includes(chunk.tool_operation.operation)) {
-                                if (rootPath) {
-                                    refreshFileTree(rootPath);
+                                const currentRootPath = useFileStore.getState().rootPath;
+                                if (currentRootPath) {
+                                    refreshFileTree(currentRootPath);
                                 }
                             }
                         }
@@ -609,6 +610,7 @@ export function useAI() {
                     sessionId: activeSessionId || "",
                     historyMessages,
                     message: fullMessage,
+                    providerType,
                     apiKey,
                     baseUrl,
                     modelId: activeModelId,

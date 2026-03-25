@@ -1,6 +1,8 @@
+pub mod codex_subscription;
 pub mod config;
 pub mod openai_compatible;
 
+pub use codex_subscription::CodexSubscriptionProvider;
 pub use config::OpenAICompatibleConfig;
 pub use openai_compatible::OpenAICompatibleProvider;
 

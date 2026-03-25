@@ -11,6 +11,7 @@ use commands::ai_debug;
 use commands::ai_service;
 use commands::attachment_commands;
 use commands::chat_storage;
+use commands::codex_auth;
 use commands::file_commands;
 use commands::file_watcher;
 use commands::lsp_commands;
@@ -27,8 +28,10 @@ pub fn run() {
             let chat_storage_state = chat_storage::ChatStorageState::new(app.handle())?;
             let ai_service_state =
                 ai_service::AIService::from_db_path(chat_storage_state.db_path().to_path_buf())?;
+            let codex_auth_state = codex_auth::CodexAuthState::new(app.handle())?;
             app.manage(chat_storage_state);
             app.manage(ai_service_state);
+            app.manage(codex_auth_state);
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -58,6 +61,9 @@ pub fn run() {
             ai_commands::list_chat_sessions,
             ai_commands::delete_chat_session,
             ai_commands::rename_chat_session,
+            codex_auth::codex_auth_status,
+            codex_auth::codex_start_login,
+            codex_auth::codex_logout,
             // Durable chat storage
             chat_storage::load_chat_state,
             chat_storage::save_chat_state,

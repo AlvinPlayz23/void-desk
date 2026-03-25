@@ -10,7 +10,8 @@ use tokio::sync::RwLock;
 
 use super::ai_tools;
 use crate::sdk::provider::{
-    ModelInfo, OpenAICompatibleConfig, OpenAICompatibleProvider, Provider,
+    CodexSubscriptionProvider, ModelInfo, OpenAICompatibleConfig, OpenAICompatibleProvider,
+    Provider,
 };
 use crate::sdk::{Agent, SessionStore, ToolPolicy};
 
@@ -45,30 +46,56 @@ impl AIService {
     }
 
     pub fn create_provider(
+        provider_type: &str,
         api_key: &str,
         base_url: &str,
         model_id: &str,
+        codex_auth_path: Option<PathBuf>,
     ) -> Result<Arc<dyn Provider>> {
-        let config = OpenAICompatibleConfig::new(api_key, base_url, model_id);
-        Ok(Arc::new(OpenAICompatibleProvider::from_config(config)?))
+        match provider_type {
+            "codex_subscription" => {
+                let auth_path = codex_auth_path
+                    .ok_or_else(|| anyhow::anyhow!("Codex auth path is required"))?;
+                Ok(Arc::new(CodexSubscriptionProvider::new(
+                    auth_path, model_id,
+                )?))
+            }
+            _ => {
+                let config = OpenAICompatibleConfig::new(api_key, base_url, model_id);
+                Ok(Arc::new(OpenAICompatibleProvider::from_config(config)?))
+            }
+        }
     }
 
     pub fn create_agent(
+        provider_type: &str,
         api_key: &str,
         base_url: &str,
         model_id: &str,
         active_path: Option<&str>,
+        codex_auth_path: Option<PathBuf>,
     ) -> Result<Agent> {
-        Ok(Self::create_agent_build(api_key, base_url, model_id, active_path)?.agent)
+        Ok(Self::create_agent_build(
+            provider_type,
+            api_key,
+            base_url,
+            model_id,
+            active_path,
+            codex_auth_path,
+        )?
+        .agent)
     }
 
     pub fn create_agent_build(
+        provider_type: &str,
         api_key: &str,
         base_url: &str,
         model_id: &str,
         active_path: Option<&str>,
+        codex_auth_path: Option<PathBuf>,
     ) -> Result<AgentBuild> {
-        let provider = Self::create_provider(api_key, base_url, model_id)?;
+        let provider =
+            Self::create_provider(provider_type, api_key, base_url, model_id, codex_auth_path)?;
         let model_info = provider.model_info();
 
         let mut agent_builder = Agent::builder(provider)

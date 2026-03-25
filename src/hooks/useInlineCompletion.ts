@@ -43,7 +43,7 @@ export function useInlineCompletion() {
 
     const requestCompletion = useCallback(
         (content: string, cursorPos: number, filePath: string, language: string) => {
-            if (!activeAISettings.apiKey || !inlineCompletionsEnabled) {
+            if ((!activeAISettings.apiKey && activeAISettings.providerType !== "codex_subscription") || !inlineCompletionsEnabled) {
                 return;
             }
 
@@ -91,6 +91,7 @@ export function useInlineCompletion() {
                         cursorPos,
                         filePath,
                         language,
+                        providerType: activeAISettings.providerType,
                         apiKey: activeAISettings.apiKey,
                         baseUrl: activeAISettings.baseUrl,
                         modelId: activeModelId,
