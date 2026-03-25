@@ -1,8 +1,9 @@
 pub mod ai_commands;
-pub mod attachment_commands;
 pub mod ai_debug;
 pub mod ai_service;
 pub mod ai_tools;
+pub mod attachment_commands;
+pub mod chat_storage;
 pub mod file_commands;
 pub mod file_watcher;
 pub mod lsp_commands;

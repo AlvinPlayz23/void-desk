@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 export interface ToolOperation {
     operation: string;
@@ -34,6 +33,7 @@ export type ChatAttachment =
     };
 
 export interface Message {
+    id: string;
     role: "user" | "assistant";
     content: string;
     tool_call?: string;
@@ -42,43 +42,6 @@ export interface Message {
     attachments?: ChatAttachment[];
     timestamp: number;
 }
-
-let toolPartCounter = 0;
-const generateToolPartId = () => `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${toolPartCounter++}`;
-
-const deriveContentFromParts = (parts: MessagePart[]) =>
-    parts
-        .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
-        .map((p) => p.text)
-        .join("");
-
-const normalizeMessage = (message: any): Message => {
-    if (Array.isArray(message.parts) && message.parts.length > 0) {
-        return message as Message;
-    }
-    const parts: MessagePart[] = [];
-    for (const op of message.toolOperations ?? []) {
-        parts.push({ type: "tool", id: generateToolPartId(), toolOperation: op });
-    }
-    if (message.content) {
-        parts.push({ type: "text", text: message.content });
-    }
-    return { ...message, parts, content: message.content ?? deriveContentFromParts(parts) };
-};
-
-// Avoid persisting attachment payloads (text blobs / base64 images) into localStorage.
-// They stay available in-memory for the active chat session, but skipping them in
-// persisted state prevents large synchronous writes on every streaming update.
-const stripPersistedAttachments = (message: Message): Message => ({
-    ...normalizeMessage(message),
-    attachments: undefined,
-});
-
-const stripPersistedSessions = (sessions: ChatSession[]): ChatSession[] =>
-    sessions.map((session) => ({
-        ...session,
-        messages: session.messages.map(stripPersistedAttachments),
-    }));
 
 export interface DebugLog {
     timestamp: number;
@@ -97,23 +60,32 @@ export interface ChatSession {
     lastUpdated: number;
 }
 
+export interface PersistedChatState {
+    sessions: ChatSession[];
+    activeSessionId: string | null;
+}
+
+const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_CONTEXT_PATHS: string[] = [];
+const EMPTY_DEBUG_LOGS: DebugLog[] = [];
+
 interface ChatState {
     sessions: ChatSession[];
     activeSessionId: string | null;
+    isHydrated: boolean;
 
-    // Current session helpers
     currentSession: () => ChatSession | null;
     currentMessages: () => Message[];
     currentContextPaths: () => string[];
     currentDebugLogs: () => DebugLog[];
 
-    // Session management
     createSession: (name: string, workspacePath?: string | null) => string;
     deleteSession: (id: string) => void;
     switchSession: (id: string) => void;
     renameSession: (id: string, name: string) => void;
+    replaceState: (state: PersistedChatState) => void;
+    setHydrated: (hydrated: boolean) => void;
 
-    // Message management
     addMessage: (message: Message) => void;
     updateLastMessage: (updates: Partial<Message>) => void;
     appendToLastMessage: (text: string) => void;
@@ -125,428 +97,497 @@ interface ChatState {
     addDebugLog: (log: DebugLog) => void;
     clearDebugLogs: () => void;
 
-    // Context management
     addContextPath: (path: string) => void;
     removeContextPath: (path: string) => void;
     clearContextPaths: () => void;
 }
 
-export const useChatStore = create<ChatState>()(
-    persist(
-        (set, get) => ({
-            sessions: [],
-            activeSessionId: null,
+let toolPartCounter = 0;
+let messageCounter = 0;
 
-            currentSession: () => {
-                const state = get();
-                if (!state.activeSessionId) return null;
-                return state.sessions.find((s) => s.id === state.activeSessionId) || null;
-            },
+const generateToolPartId = () => `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${toolPartCounter++}`;
+const generateMessageId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${messageCounter++}`;
 
-            currentMessages: () => {
-                const current = get().currentSession();
-                return current?.messages || [];
-            },
+const deriveContentFromParts = (parts: MessagePart[]) =>
+    parts
+        .filter((part): part is Extract<MessagePart, { type: "text" }> => part.type === "text")
+        .map((part) => part.text)
+        .join("");
 
-            currentContextPaths: () => {
-                const current = get().currentSession();
-                return current?.contextPaths || [];
-            },
+const normalizeMessage = (message: any): Message => {
+    if (Array.isArray(message.parts) && message.parts.length > 0) {
+        return {
+            ...(message as Message),
+            id: message.id ?? generateMessageId(),
+            parts: message.parts,
+            content: message.content ?? deriveContentFromParts(message.parts),
+        };
+    }
 
-            currentDebugLogs: () => {
-                const current = get().currentSession();
-                return current?.debugLogs || [];
-            },
+    const parts: MessagePart[] = [];
+    for (const operation of message.toolOperations ?? []) {
+        parts.push({ type: "tool", id: generateToolPartId(), toolOperation: operation });
+    }
+    if (message.content) {
+        parts.push({ type: "text", text: message.content });
+    }
 
-            createSession: (name: string, workspacePath?: string | null) => {
-                const id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                const newSession: ChatSession = {
-                    id,
-                    name,
-                    messages: [],
-                    contextPaths: [],
-                    workspacePath: workspacePath ?? null,
-                    debugLogs: [],
-                    createdAt: Date.now(),
-                    lastUpdated: Date.now(),
-                };
+    return {
+        ...message,
+        id: message.id ?? generateMessageId(),
+        parts,
+        content: message.content ?? deriveContentFromParts(parts),
+    };
+};
 
-                set((state) => ({
-                    sessions: [...state.sessions, newSession],
-                    activeSessionId: id,
-                }));
+const stripPersistedAttachments = (message: Message): Message => ({
+    ...normalizeMessage(message),
+    attachments: undefined,
+});
 
-                return id;
-            },
+const sanitizeSession = (session: ChatSession): ChatSession => ({
+    ...session,
+    messages: (session.messages ?? []).map(stripPersistedAttachments),
+    debugLogs: session.debugLogs ?? [],
+    contextPaths: session.contextPaths ?? [],
+    workspacePath: session.workspacePath ?? null,
+});
 
-            deleteSession: (id: string) => {
-                set((state) => {
-                    const sessions = state.sessions.filter((s) => s.id !== id);
-                    const activeSessionId =
-                        state.activeSessionId === id ? (sessions[0]?.id || null) : state.activeSessionId;
+const sanitizeState = (state: PersistedChatState): PersistedChatState => {
+    const sessions = (state.sessions ?? []).map(sanitizeSession);
+    const activeSessionId = sessions.find((session) => session.id === state.activeSessionId)
+        ? state.activeSessionId
+        : (sessions[0]?.id ?? null);
 
-                    return {
-                        sessions,
-                        activeSessionId,
-                    };
-                });
-            },
+    return {
+        sessions,
+        activeSessionId,
+    };
+};
 
-            switchSession: (id: string) => {
-                set((state) => ({
-                    activeSessionId: state.sessions.find((s) => s.id === id) ? id : state.activeSessionId,
-                }));
-            },
+const resolveCurrentSession = (state: Pick<ChatState, "sessions" | "activeSessionId">): ChatSession | null => {
+    if (!state.activeSessionId) return null;
+    return state.sessions.find((session) => session.id === state.activeSessionId) || null;
+};
 
-            renameSession: (id: string, name: string) => {
-                set((state) => ({
-                    sessions: state.sessions.map((s) => (s.id === id ? { ...s, name } : s)),
-                }));
-            },
+export const selectCurrentSession = (state: Pick<ChatState, "sessions" | "activeSessionId">) =>
+    resolveCurrentSession(state);
 
-            addMessage: (message: Message) => {
-                const normalized = normalizeMessage(message);
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
+export const selectCurrentMessages = (state: Pick<ChatState, "sessions" | "activeSessionId">) =>
+    resolveCurrentSession(state)?.messages ?? EMPTY_MESSAGES;
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id
-                                ? { ...s, messages: [...s.messages, normalized], lastUpdated: Date.now() }
-                                : s
-                        ),
-                    };
-                });
-            },
+export const selectCurrentContextPaths = (state: Pick<ChatState, "sessions" | "activeSessionId">) =>
+    resolveCurrentSession(state)?.contextPaths ?? EMPTY_CONTEXT_PATHS;
 
-            updateLastMessage: (updates) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current || current.messages.length === 0) return state;
+export const selectCurrentDebugLogs = (state: Pick<ChatState, "sessions" | "activeSessionId">) =>
+    resolveCurrentSession(state)?.debugLogs ?? EMPTY_DEBUG_LOGS;
 
-                    const lastIndex = current.messages.length - 1;
-                    const newMessages = [...current.messages];
-                    newMessages[lastIndex] = { ...newMessages[lastIndex], ...updates };
+export const useChatStore = create<ChatState>()((set, get) => ({
+    sessions: [],
+    activeSessionId: null,
+    isHydrated: false,
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id
-                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
-                                : s
-                        ),
-                    };
-                });
-            },
+    currentSession: () => {
+        return resolveCurrentSession(get());
+    },
 
-            appendToLastMessage: (text) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current || current.messages.length === 0) return state;
+    currentMessages: () => {
+        const current = get().currentSession();
+        return current?.messages ?? EMPTY_MESSAGES;
+    },
 
-                    const lastIndex = current.messages.length - 1;
-                    const newMessages = [...current.messages];
-                    const lastMsg = newMessages[lastIndex];
-                    const parts = [...lastMsg.parts];
-                    const lastPart = parts[parts.length - 1];
+    currentContextPaths: () => {
+        const current = get().currentSession();
+        return current?.contextPaths ?? EMPTY_CONTEXT_PATHS;
+    },
 
-                    if (lastPart && lastPart.type === "text") {
-                        parts[parts.length - 1] = { type: "text", text: lastPart.text + text };
-                    } else {
-                        parts.push({ type: "text", text });
+    currentDebugLogs: () => {
+        const current = get().currentSession();
+        return current?.debugLogs ?? EMPTY_DEBUG_LOGS;
+    },
+
+    createSession: (name: string, workspacePath?: string | null) => {
+        const id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const newSession: ChatSession = {
+            id,
+            name,
+            messages: [],
+            contextPaths: [],
+            workspacePath: workspacePath ?? null,
+            debugLogs: [],
+            createdAt: Date.now(),
+            lastUpdated: Date.now(),
+        };
+
+        set((state) => ({
+            sessions: [...state.sessions, newSession],
+            activeSessionId: id,
+        }));
+
+        return id;
+    },
+
+    deleteSession: (id: string) => {
+        set((state) => {
+            const sessions = state.sessions.filter((session) => session.id !== id);
+            const activeSessionId =
+                state.activeSessionId === id ? (sessions[0]?.id || null) : state.activeSessionId;
+
+            return {
+                sessions,
+                activeSessionId,
+            };
+        });
+    },
+
+    switchSession: (id: string) => {
+        set((state) => ({
+            activeSessionId: state.sessions.find((session) => session.id === id) ? id : state.activeSessionId,
+        }));
+    },
+
+    renameSession: (id: string, name: string) => {
+        set((state) => ({
+            sessions: state.sessions.map((session) => (session.id === id ? { ...session, name } : session)),
+        }));
+    },
+
+    replaceState: (state) => {
+        const sanitized = sanitizeState(state);
+        set({
+            sessions: sanitized.sessions,
+            activeSessionId: sanitized.activeSessionId,
+        });
+    },
+
+    setHydrated: (hydrated) => set({ isHydrated: hydrated }),
+
+    addMessage: (message: Message) => {
+        const normalized = normalizeMessage(message);
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
+
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id
+                        ? { ...session, messages: [...session.messages, normalized], lastUpdated: Date.now() }
+                        : session
+                ),
+            };
+        });
+    },
+
+    updateLastMessage: (updates) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current || current.messages.length === 0) return state;
+
+            const lastIndex = current.messages.length - 1;
+            const newMessages = [...current.messages];
+            newMessages[lastIndex] = { ...newMessages[lastIndex], ...updates };
+
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id
+                        ? { ...session, messages: newMessages, lastUpdated: Date.now() }
+                        : session
+                ),
+            };
+        });
+    },
+
+    appendToLastMessage: (text) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current || current.messages.length === 0) return state;
+
+            const lastIndex = current.messages.length - 1;
+            const newMessages = [...current.messages];
+            const lastMsg = newMessages[lastIndex];
+            const parts = [...lastMsg.parts];
+            const lastPart = parts[parts.length - 1];
+
+            if (lastPart && lastPart.type === "text") {
+                parts[parts.length - 1] = { type: "text", text: lastPart.text + text };
+            } else {
+                parts.push({ type: "text", text });
+            }
+
+            newMessages[lastIndex] = {
+                ...lastMsg,
+                parts,
+                content: lastMsg.content + text,
+            };
+
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id
+                        ? { ...session, messages: newMessages, lastUpdated: Date.now() }
+                        : session
+                ),
+            };
+        });
+    },
+
+    appendReasoningToLastMessage: (text) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current || current.messages.length === 0) return state;
+
+            const lastIndex = current.messages.length - 1;
+            const newMessages = [...current.messages];
+            const lastMsg = newMessages[lastIndex];
+            const parts = [...lastMsg.parts];
+            const lastPart = parts[parts.length - 1];
+
+            if (lastPart && lastPart.type === "reasoning") {
+                parts[parts.length - 1] = { type: "reasoning", text: lastPart.text + text };
+            } else {
+                parts.push({ type: "reasoning", text });
+            }
+
+            newMessages[lastIndex] = {
+                ...lastMsg,
+                parts,
+            };
+
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id
+                        ? { ...session, messages: newMessages, lastUpdated: Date.now() }
+                        : session
+                ),
+            };
+        });
+    },
+
+    addToolOperation: (operation) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current || current.messages.length === 0) return state;
+
+            const lastIndex = current.messages.length - 1;
+            const newMessages = [...current.messages];
+            const lastMsg = newMessages[lastIndex];
+
+            const operations = [...(lastMsg.toolOperations || [])];
+            if (operation.status === "started") {
+                operations.push(operation);
+            } else {
+                let matchIndex = -1;
+                for (let i = operations.length - 1; i >= 0; i--) {
+                    if (operations[i].target === operation.target && operations[i].status === "started") {
+                        matchIndex = i;
+                        break;
                     }
+                }
 
-                    newMessages[lastIndex] = {
-                        ...lastMsg,
-                        parts,
-                        content: lastMsg.content + text,
-                    };
+                if (matchIndex !== -1) {
+                    operations[matchIndex] = { ...operations[matchIndex], ...operation };
+                } else {
+                    operations.push(operation);
+                }
+            }
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id
-                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
-                                : s
-                        ),
-                    };
-                });
-            },
-
-            appendReasoningToLastMessage: (text) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current || current.messages.length === 0) return state;
-
-                    const lastIndex = current.messages.length - 1;
-                    const newMessages = [...current.messages];
-                    const lastMsg = newMessages[lastIndex];
-                    const parts = [...lastMsg.parts];
-                    const lastPart = parts[parts.length - 1];
-
-                    if (lastPart && lastPart.type === "reasoning") {
-                        parts[parts.length - 1] = { type: "reasoning", text: lastPart.text + text };
-                    } else {
-                        parts.push({ type: "reasoning", text });
+            const parts = [...lastMsg.parts];
+            if (operation.status === "started") {
+                parts.push({ type: "tool", id: generateToolPartId(), toolOperation: operation });
+            } else {
+                let matchPartIndex = -1;
+                for (let i = parts.length - 1; i >= 0; i--) {
+                    const part = parts[i];
+                    if (part.type === "tool" && part.toolOperation.target === operation.target && part.toolOperation.status === "started") {
+                        matchPartIndex = i;
+                        break;
                     }
+                }
 
-                    newMessages[lastIndex] = {
-                        ...lastMsg,
-                        parts,
-                    };
-
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id
-                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
-                                : s
-                        ),
-                    };
-                });
-            },
-
-            addToolOperation: (operation) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current || current.messages.length === 0) return state;
-
-                    const lastIndex = current.messages.length - 1;
-                    const newMessages = [...current.messages];
-                    const lastMsg = newMessages[lastIndex];
-
-                    // Update legacy toolOperations array
-                    const ops = [...(lastMsg.toolOperations || [])];
-                    if (operation.status === "started") {
-                        ops.push(operation);
-                    } else {
-                        // Find the LAST started op with the same target
-                        let matchIdx = -1;
-                        for (let i = ops.length - 1; i >= 0; i--) {
-                            if (ops[i].target === operation.target && ops[i].status === "started") {
-                                matchIdx = i;
-                                break;
-                            }
-                        }
-                        if (matchIdx !== -1) {
-                            ops[matchIdx] = { ...ops[matchIdx], ...operation };
-                        } else {
-                            ops.push(operation);
-                        }
+                if (matchPartIndex !== -1) {
+                    const existingPart = parts[matchPartIndex];
+                    if (existingPart.type === "tool") {
+                        parts[matchPartIndex] = {
+                            type: "tool",
+                            id: existingPart.id,
+                            toolOperation: { ...existingPart.toolOperation, ...operation },
+                        };
                     }
+                } else {
+                    parts.push({ type: "tool", id: generateToolPartId(), toolOperation: operation });
+                }
+            }
 
-                    // Update parts array
-                    const parts = [...lastMsg.parts];
-                    if (operation.status === "started") {
-                        const toolId = generateToolPartId();
-                        parts.push({ type: "tool", id: toolId, toolOperation: operation });
-                    } else {
-                        // Find the LAST started tool part with the same target
-                        let matchPartIdx = -1;
-                        for (let i = parts.length - 1; i >= 0; i--) {
-                            const p = parts[i];
-                            if (p.type === "tool" && p.toolOperation.target === operation.target && p.toolOperation.status === "started") {
-                                matchPartIdx = i;
-                                break;
-                            }
-                        }
-                        if (matchPartIdx !== -1) {
-                            const existingPart = parts[matchPartIdx];
-                            if (existingPart.type === "tool") {
-                                parts[matchPartIdx] = {
-                                    type: "tool",
-                                    id: existingPart.id,
-                                    toolOperation: { ...existingPart.toolOperation, ...operation },
-                                };
-                            }
-                        } else {
-                            const toolId = generateToolPartId();
-                            parts.push({ type: "tool", id: toolId, toolOperation: operation });
-                        }
+            newMessages[lastIndex] = {
+                ...lastMsg,
+                toolOperations: operations,
+                parts,
+            };
+
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id
+                        ? { ...session, messages: newMessages, lastUpdated: Date.now() }
+                        : session
+                ),
+            };
+        });
+    },
+
+    addToolOperationToLastReasoning: (operation) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current || current.messages.length === 0) return state;
+
+            const lastIndex = current.messages.length - 1;
+            const newMessages = [...current.messages];
+            const lastMsg = newMessages[lastIndex];
+            const parts = [...lastMsg.parts];
+
+            let reasoningIndex = -1;
+            for (let i = parts.length - 1; i >= 0; i--) {
+                if (parts[i].type === "reasoning") {
+                    reasoningIndex = i;
+                    break;
+                }
+            }
+            if (reasoningIndex === -1) return state;
+
+            const reasoningPart = parts[reasoningIndex];
+            if (reasoningPart.type !== "reasoning") return state;
+            const innerTools = [...(reasoningPart.innerTools ?? [])];
+
+            if (operation.status === "started") {
+                innerTools.push({ id: generateToolPartId(), toolOperation: operation });
+            } else {
+                let matchIndex = -1;
+                for (let i = innerTools.length - 1; i >= 0; i--) {
+                    if (innerTools[i].toolOperation.target === operation.target && innerTools[i].toolOperation.status === "started") {
+                        matchIndex = i;
+                        break;
                     }
+                }
 
-                    newMessages[lastIndex] = {
-                        ...lastMsg,
-                        toolOperations: ops,
-                        parts,
+                if (matchIndex !== -1) {
+                    innerTools[matchIndex] = {
+                        ...innerTools[matchIndex],
+                        toolOperation: { ...innerTools[matchIndex].toolOperation, ...operation },
                     };
+                } else {
+                    innerTools.push({ id: generateToolPartId(), toolOperation: operation });
+                }
+            }
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id
-                                ? { ...s, messages: newMessages, lastUpdated: Date.now() }
-                                : s
-                        ),
-                    };
-                });
-            },
+            parts[reasoningIndex] = { ...reasoningPart, innerTools };
+            newMessages[lastIndex] = { ...lastMsg, parts };
 
-            addToolOperationToLastReasoning: (operation) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current || current.messages.length === 0) return state;
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id
+                        ? { ...session, messages: newMessages, lastUpdated: Date.now() }
+                        : session
+                ),
+            };
+        });
+    },
 
-                    const lastIndex = current.messages.length - 1;
-                    const newMessages = [...current.messages];
-                    const lastMsg = newMessages[lastIndex];
-                    const parts = [...lastMsg.parts];
+    removeLastMessage: () => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
 
-                    let reasoningIdx = -1;
-                    for (let i = parts.length - 1; i >= 0; i--) {
-                        if (parts[i].type === "reasoning") { reasoningIdx = i; break; }
-                    }
-                    if (reasoningIdx === -1) return state;
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id ? { ...session, messages: session.messages.slice(0, -1) } : session
+                ),
+            };
+        });
+    },
 
-                    const rp = parts[reasoningIdx];
-                    if (rp.type !== "reasoning") return state;
-                    const innerTools = [...(rp.innerTools ?? [])];
+    clearCurrentMessages: () => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
 
-                    if (operation.status === "started") {
-                        innerTools.push({ id: generateToolPartId(), toolOperation: operation });
-                    } else {
-                        let matchIdx = -1;
-                        for (let i = innerTools.length - 1; i >= 0; i--) {
-                            if (innerTools[i].toolOperation.target === operation.target && innerTools[i].toolOperation.status === "started") {
-                                matchIdx = i; break;
-                            }
-                        }
-                        if (matchIdx !== -1) {
-                            innerTools[matchIdx] = { ...innerTools[matchIdx], toolOperation: { ...innerTools[matchIdx].toolOperation, ...operation } };
-                        } else {
-                            innerTools.push({ id: generateToolPartId(), toolOperation: operation });
-                        }
-                    }
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id ? { ...session, messages: [] } : session
+                ),
+            };
+        });
+    },
 
-                    parts[reasoningIdx] = { ...rp, innerTools };
-                    newMessages[lastIndex] = { ...lastMsg, parts };
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id ? { ...s, messages: newMessages, lastUpdated: Date.now() } : s
-                        ),
-                    };
-                });
-            },
+    addDebugLog: (log) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
 
-            removeLastMessage: () => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
+            const nextDebugLogs = [...current.debugLogs, log].slice(-500);
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id ? { ...s, messages: s.messages.slice(0, -1) } : s
-                        ),
-                    };
-                });
-            },
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id
+                        ? { ...session, debugLogs: nextDebugLogs, lastUpdated: Date.now() }
+                        : session
+                ),
+            };
+        });
+    },
 
-            clearCurrentMessages: () => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
+    clearDebugLogs: () => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id ? { ...s, messages: [] } : s
-                        ),
-                    };
-                });
-            },
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id ? { ...session, debugLogs: [] } : session
+                ),
+            };
+        });
+    },
 
-            addDebugLog: (log) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
+    addContextPath: (path: string) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
 
-                    const nextDebugLogs = [...current.debugLogs, log].slice(-500);
+            const contextPaths = current.contextPaths.includes(path)
+                ? current.contextPaths
+                : [...current.contextPaths, path];
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id
-                                ? { ...s, debugLogs: nextDebugLogs, lastUpdated: Date.now() }
-                                : s
-                        ),
-                    };
-                });
-            },
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id ? { ...session, contextPaths } : session
+                ),
+            };
+        });
+    },
 
-            clearDebugLogs: () => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
+    removeContextPath: (path: string) => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id ? { ...s, debugLogs: [] } : s
-                        ),
-                    };
-                });
-            },
+            const contextPaths = current.contextPaths.filter((currentPath) => currentPath !== path);
 
-            addContextPath: (path: string) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id ? { ...session, contextPaths } : session
+                ),
+            };
+        });
+    },
 
-                    const paths = current.contextPaths.includes(path)
-                        ? current.contextPaths
-                        : [...current.contextPaths, path];
+    clearContextPaths: () => {
+        set((state) => {
+            const current = state.currentSession();
+            if (!current) return state;
 
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id ? { ...s, contextPaths: paths } : s
-                        ),
-                    };
-                });
-            },
-
-            removeContextPath: (path: string) => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
-
-                    const paths = current.contextPaths.filter((p) => p !== path);
-
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id ? { ...s, contextPaths: paths } : s
-                        ),
-                    };
-                });
-            },
-
-            clearContextPaths: () => {
-                set((state) => {
-                    const current = state.currentSession();
-                    if (!current) return state;
-
-                    return {
-                        sessions: state.sessions.map((s) =>
-                            s.id === current.id ? { ...s, contextPaths: [] } : s
-                        ),
-                    };
-                });
-            },
-        }),
-        {
-            name: "voiddesk-chat-sessions",
-            version: 4,
-            partialize: (state) => ({
-                sessions: stripPersistedSessions(state.sessions),
-                activeSessionId: state.activeSessionId,
-            }),
-            migrate: (persistedState: any, _version: number) => {
-                if (!persistedState?.sessions) return persistedState;
-                return {
-                    ...persistedState,
-                    sessions: stripPersistedSessions(
-                        persistedState.sessions.map((session: any) => ({
-                            ...session,
-                            messages: (session.messages ?? []).map((msg: any) => normalizeMessage(msg)),
-                            debugLogs: session.debugLogs ?? [],
-                            contextPaths: session.contextPaths ?? [],
-                        }))
-                    ),
-                };
-            },
-        }
-    )
-);
+            return {
+                sessions: state.sessions.map((session) =>
+                    session.id === current.id ? { ...session, contextPaths: [] } : session
+                ),
+            };
+        });
+    },
+}));

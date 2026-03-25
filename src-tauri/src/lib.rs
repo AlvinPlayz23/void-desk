@@ -4,9 +4,13 @@ mod sdk;
 mod terminal;
 mod tracing_setup;
 
+use tauri::Manager;
+
 use commands::ai_commands;
 use commands::ai_debug;
+use commands::ai_service;
 use commands::attachment_commands;
+use commands::chat_storage;
 use commands::file_commands;
 use commands::file_watcher;
 use commands::lsp_commands;
@@ -19,6 +23,14 @@ pub fn run() {
     tauri::Builder::default()
         .manage(terminal::TerminalState::new())
         .manage(lsp_commands::LspState::new())
+        .setup(|app| {
+            let chat_storage_state = chat_storage::ChatStorageState::new(app.handle())?;
+            let ai_service_state =
+                ai_service::AIService::from_db_path(chat_storage_state.db_path().to_path_buf())?;
+            app.manage(chat_storage_state);
+            app.manage(ai_service_state);
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
@@ -46,6 +58,9 @@ pub fn run() {
             ai_commands::list_chat_sessions,
             ai_commands::delete_chat_session,
             ai_commands::rename_chat_session,
+            // Durable chat storage
+            chat_storage::load_chat_state,
+            chat_storage::save_chat_state,
             // AI Debug
             ai_debug::debug_tool_call,
             ai_debug::debug_stream_response,

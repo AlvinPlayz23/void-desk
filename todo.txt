@@ -1,3 +1,7 @@
+whenevre there is a file edit by agent the epxlorer freaks out and goes to iringal state, and while file being edited if we open the same file it takes 5sec to open
+
+
+
 
 the attachment code i think iss like a bit too much..workarounds, clean it but functional..use hunter alpha true model
 

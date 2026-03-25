@@ -1,8 +1,8 @@
+pub mod config;
 pub mod openai_compatible;
-pub mod registry;
 
+pub use config::OpenAICompatibleConfig;
 pub use openai_compatible::OpenAICompatibleProvider;
-pub use registry::ProviderRegistry;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -30,14 +30,14 @@ pub struct ModelInfo {
 
 pub fn infer_model_capabilities(model_id: &str) -> ModelCapabilities {
     let id = model_id.to_lowercase();
-    let supports_reasoning =
-        id.contains("o1") || id.contains("reason") || id.contains("r1") || id.contains("deepseek");
-    let supports_vision = id.contains("vision")
-        || id.contains("gpt-4o")
-        || id.contains("gpt-4.1")
-        || id.contains("gpt-4-turbo")
-        || id.contains("claude-3")
-        || id.contains("gemini");
+    let supports_reasoning = id.starts_with("o1")
+        || id.starts_with("o3")
+        || id.contains("reasoner")
+        || id.contains("reasoning");
+    let supports_vision = id.starts_with("gpt-4o")
+        || id.starts_with("gpt-4.1")
+        || id.starts_with("gpt-4-turbo")
+        || id.contains("vision");
 
     ModelCapabilities {
         supports_streaming: true,
@@ -50,20 +50,12 @@ pub fn infer_model_capabilities(model_id: &str) -> ModelCapabilities {
 pub fn infer_model_context_window(model_id: &str) -> Option<usize> {
     let id = model_id.to_lowercase();
 
-    if id.contains("gpt-4.1") || id.contains("gpt-4o") || id.contains("gpt-4-turbo") {
+    if id.starts_with("gpt-4.1") || id.starts_with("gpt-4o") || id.starts_with("gpt-4-turbo") {
         return Some(128_000);
     }
 
-    if id.contains("gpt-3.5") {
+    if id.starts_with("gpt-3.5") {
         return Some(16_000);
-    }
-
-    if id.contains("claude-3") || id.contains("gemini") || id.contains("deepseek") {
-        return Some(128_000);
-    }
-
-    if id.contains("llama") || id.contains("mistral") || id.contains("qwen") {
-        return Some(32_000);
     }
 
     None

@@ -7,7 +7,9 @@ use tokio::time::{sleep, Duration};
 
 use crate::sdk::core::SdkError;
 
-const RETRY_DELAY_MS: &[u64] = &[0, 10_000, 20_000, 50_000, 70_000, 80_000, 90_000, 100_000, 120_000, 150_000];
+const RETRY_DELAY_MS: &[u64] = &[
+    0, 1_000, 3_000, 5_000,
+];
 
 #[derive(Debug, Clone)]
 pub struct TransportConfig {
@@ -18,7 +20,7 @@ pub struct TransportConfig {
 impl Default for TransportConfig {
     fn default() -> Self {
         Self {
-            timeout_ms: 300_000,
+            timeout_ms: 120_000,
             max_retries: RETRY_DELAY_MS.len() as u32,
         }
     }
@@ -31,14 +33,29 @@ pub struct HttpTransport {
     base_url: String,
     api_key: String,
     config: TransportConfig,
+    default_headers: HeaderMap,
 }
 
 impl HttpTransport {
     pub fn new(api_key: &str, base_url: &str) -> Result<Self> {
-        Self::new_with_config(api_key, base_url, TransportConfig::default())
+        Self::new_with_config_and_headers(
+            api_key,
+            base_url,
+            TransportConfig::default(),
+            HeaderMap::new(),
+        )
     }
 
     pub fn new_with_config(api_key: &str, base_url: &str, config: TransportConfig) -> Result<Self> {
+        Self::new_with_config_and_headers(api_key, base_url, config, HeaderMap::new())
+    }
+
+    pub fn new_with_config_and_headers(
+        api_key: &str,
+        base_url: &str,
+        config: TransportConfig,
+        default_headers: HeaderMap,
+    ) -> Result<Self> {
         if api_key.trim().is_empty() {
             return Err(Error::new(SdkError::validation("API key is required")));
         }
@@ -55,6 +72,7 @@ impl HttpTransport {
             base_url,
             api_key: api_key.to_string(),
             config,
+            default_headers,
         })
     }
 
@@ -63,7 +81,7 @@ impl HttpTransport {
     }
 
     fn default_headers(&self) -> Result<HeaderMap> {
-        let mut headers = HeaderMap::new();
+        let mut headers = self.default_headers.clone();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers.insert(
             AUTHORIZATION,
@@ -75,24 +93,29 @@ impl HttpTransport {
     /// Send a POST request and return raw text response
     pub async fn post_text(&self, endpoint: &str, body: &str) -> Result<String> {
         let url = format!("{}/{}", self.base_url, endpoint);
-        tracing::info!("post_text: sending request to {} (body_len={} bytes)", url, body.len());
-        let result = self.retry_request(
-            || async {
-                let response = self
-                    .client
-                    .post(&url)
-                    .headers(self.default_headers()?)
-                    .body(body.to_string())
-                    .timeout(Duration::from_millis(self.config.timeout_ms))
-                    .send()
-                    .await
-                    .map_err(map_reqwest_error)?;
+        tracing::info!(
+            "post_text: sending request to {} (body_len={} bytes)",
+            url,
+            body.len()
+        );
+        let result = self
+            .retry_request(
+                || async {
+                    let response = self
+                        .client
+                        .post(&url)
+                        .headers(self.default_headers()?)
+                        .body(body.to_string())
+                        .timeout(Duration::from_millis(self.config.timeout_ms))
+                        .send()
+                        .await
+                        .map_err(map_reqwest_error)?;
 
-                parse_non_stream_response(response).await
-            },
-            "post_text",
-        )
-        .await;
+                    parse_non_stream_response(response).await
+                },
+                "post_text",
+            )
+            .await;
         tracing::info!("post_text: request completed, success={}", result.is_ok());
         result
     }
@@ -198,7 +221,10 @@ async fn parse_non_stream_response(response: reqwest::Response) -> Result<String
     tracing::info!("parse_non_stream_response: status={}", status);
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        tracing::error!("parse_non_stream_response: error response body={}", &error_text[..error_text.len().min(500)]);
+        tracing::error!(
+            "parse_non_stream_response: error response body={}",
+            &error_text[..error_text.len().min(500)]
+        );
         return Err(Error::new(
             SdkError::from_status(status, format!("API error ({}): {}", status, error_text))
                 .with_code("http_error"),
@@ -206,6 +232,9 @@ async fn parse_non_stream_response(response: reqwest::Response) -> Result<String
     }
 
     let text = response.text().await.map_err(map_reqwest_error)?;
-    tracing::info!("parse_non_stream_response: success, response_len={}", text.len());
+    tracing::info!(
+        "parse_non_stream_response: success, response_len={}",
+        text.len()
+    );
     Ok(text)
 }

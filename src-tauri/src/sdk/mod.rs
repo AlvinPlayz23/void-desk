@@ -22,26 +22,25 @@ pub mod transport;
 pub mod agent;
 pub mod session;
 
-// Compatibility shim for old client (wraps provider)
-pub mod client;
-
 // Re-exports for public API
-pub use agent::{Agent, AgentEvent, AgentResult, AgentRunHandle};
-pub use client::AIClient;
+pub use agent::{Agent, AgentBuilder, AgentResult, AgentRunHandle};
 pub use session::{Session, SessionStore};
 
 // Core type re-exports
 pub use core::errors::{ErrorCategory, SdkError};
-pub use core::events::StreamEvent;
+pub use core::events::{
+    AgentEvent, CancelledEvent, DebugEvent, DoneEvent, StreamEvent, ToolResultEvent,
+    ToolStartEvent,
+};
 pub use core::types::{
-    ChatRequest, ChatResponse, Choice, ImageUrl, InlineImageAttachment, Message, MessageContent, MessagePart,
-    ResponseMessageDelta, ResponseStreamError, ResponseStreamResult, Tool, ToolCall,
+    ChatRequest, ChatResponse, Choice, ImageUrl, InlineImageAttachment, Message, MessageContent,
+    MessagePart, ResponseMessageDelta, ResponseStreamError, ResponseStreamResult, Tool, ToolCall,
     ToolCallFunction, ToolChoice, ToolFunction, ToolSchemaFormat, Usage,
 };
 
 // Provider re-exports
 pub use provider::{
-    ModelCapabilities, ModelInfo, OpenAICompatibleProvider, Provider, ProviderRegistry,
+    ModelCapabilities, ModelInfo, OpenAICompatibleConfig, OpenAICompatibleProvider, Provider,
 };
 
 // Tools re-exports

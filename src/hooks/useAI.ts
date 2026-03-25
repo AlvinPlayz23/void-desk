@@ -3,7 +3,13 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useFileSystem } from "@/hooks/useFileSystem";
-import { useChatStore, ToolOperation, Message, ChatAttachment } from "@/stores/chatStore";
+import {
+    useChatStore,
+    ToolOperation,
+    Message,
+    ChatAttachment,
+    selectCurrentMessages,
+} from "@/stores/chatStore";
 
 export interface AIResponseChunk {
     content?: string;
@@ -24,6 +30,9 @@ interface ConversationHistoryMessage {
     content: string;
 }
 
+const DEFAULT_CONTEXT_WINDOW_TOKENS = 32_000;
+const MIN_CONTEXT_WINDOW_TOKENS = 1_024;
+
 interface BackendImageAttachment {
     name: string;
     mimeType: string;
@@ -33,12 +42,100 @@ interface BackendImageAttachment {
     optimizedBytes?: number;
 }
 
+const summarizeToolOperations = (message: Message) => {
+    const operations = message.toolOperations
+        ?? message.parts
+            .filter((part): part is Extract<typeof message.parts[number], { type: "tool" }> => part.type === "tool")
+            .map((part) => part.toolOperation);
+
+    if (!operations || operations.length === 0) {
+        return "";
+    }
+
+    return operations
+        .slice(-6)
+        .map((operation) => `${operation.operation} ${operation.target}`)
+        .join("; ");
+};
+
+const TRANSIENT_ASSISTANT_ERROR_PATTERN = /\n{2,}Error(?: \([^)]+\))?:[\s\S]*$/;
+
+const stripTransientAssistantError = (message: Message, content: string) => {
+    if (message.role !== "assistant") {
+        return content;
+    }
+
+    const normalized = content.replace(/\r\n/g, "\n");
+    const trimmed = normalized.trim();
+
+    if (!message.toolOperations?.length && /^Error(?: \([^)]+\))?:/s.test(trimmed)) {
+        return "";
+    }
+
+    return normalized.replace(TRANSIENT_ASSISTANT_ERROR_PATTERN, "").trimEnd();
+};
+
+const historyContentForMessage = (message: Message) => {
+    const content = stripTransientAssistantError(message, message.content).trim();
+    const toolSummary = summarizeToolOperations(message);
+    if (content && toolSummary) {
+        return `${content}\n\n[Tool activity: ${toolSummary}]`;
+    }
+    if (content) {
+        return content;
+    }
+    if (toolSummary) {
+        return `[Tool activity: ${toolSummary}]`;
+    }
+    return "";
+};
+
 const serializeConversationHistory = (messages: Message[]): ConversationHistoryMessage[] =>
     messages
         .filter((message): message is Message & { role: "user" | "assistant" } =>
-            (message.role === "user" || message.role === "assistant") && message.content.trim().length > 0
+            message.role === "user" || message.role === "assistant"
         )
-        .map((message) => ({ role: message.role, content: message.content }));
+        .map((message) => ({ role: message.role, content: historyContentForMessage(message) }))
+        .filter((message) => message.content.trim().length > 0);
+
+const estimateMessageTokens = (message: Message) => {
+    let chars = message.content.length;
+    if (message.tool_call) {
+        chars += message.tool_call.length;
+    }
+    if (message.toolOperations) {
+        for (const operation of message.toolOperations) {
+            chars += operation.operation.length + operation.target.length + (operation.details?.length ?? 0);
+        }
+    }
+    return Math.max(1, Math.floor(chars / 4)) + 8;
+};
+
+const trimConversationHistory = (messages: Message[], requestedContextWindow?: number) => {
+    const effectiveWindow = Math.max(requestedContextWindow ?? DEFAULT_CONTEXT_WINDOW_TOKENS, MIN_CONTEXT_WINDOW_TOKENS);
+    const reserve = Math.min(Math.max(Math.floor(effectiveWindow / 5), 512), 8_192);
+    const historyBudget = Math.max(0, effectiveWindow - reserve);
+    if (historyBudget === 0 || messages.length === 0) {
+        return [];
+    }
+
+    const kept: Message[] = [];
+    let usedTokens = 0;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i];
+        const messageTokens = estimateMessageTokens(message);
+        if (kept.length > 0 && usedTokens + messageTokens > historyBudget) {
+            break;
+        }
+        usedTokens += messageTokens;
+        kept.push(message);
+    }
+
+    return kept.reverse();
+};
+
+const createMessageId = () => globalThis.crypto?.randomUUID?.() ?? `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const RETRY_DELAYS_MS = [0, 10_000, 20_000, 50_000, 70_000, 80_000, 90_000, 100_000, 120_000, 150_000];
 const MAX_FRONTEND_API_RETRIES = RETRY_DELAYS_MS.length;
@@ -153,9 +250,17 @@ export function useAI() {
     const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled, chatContextWindow } = useSettingsStore();
     const { rootPath } = useFileStore();
     const { refreshFileTree } = useFileSystem();
-    const messages = useChatStore((state) => state.currentMessages());
+    const messages = useChatStore(selectCurrentMessages);
     const activeSessionId = useChatStore((state) => state.activeSessionId);
-    const { addMessage, appendToLastMessage, appendReasoningToLastMessage, addToolOperation, addToolOperationToLastReasoning, updateLastMessage, addDebugLog } = useChatStore();
+    const addMessage = useChatStore((state) => state.addMessage);
+    const appendToLastMessage = useChatStore((state) => state.appendToLastMessage);
+    const appendReasoningToLastMessage = useChatStore((state) => state.appendReasoningToLastMessage);
+    const addToolOperation = useChatStore((state) => state.addToolOperation);
+    const addToolOperationToLastReasoning = useChatStore((state) => state.addToolOperationToLastReasoning);
+    const updateLastMessage = useChatStore((state) => state.updateLastMessage);
+    const removeLastMessage = useChatStore((state) => state.removeLastMessage);
+    const addDebugLog = useChatStore((state) => state.addDebugLog);
+    const clearCurrentMessages = useChatStore((state) => state.clearCurrentMessages);
 
     // Store abort flag
     const abortRef = useRef(false);
@@ -194,7 +299,7 @@ export function useAI() {
             const priorMessages = isRetry && lastSessionMessage?.role === "user"
                 ? currentSessionMessages.slice(0, -1)
                 : currentSessionMessages;
-            const historyMessages = serializeConversationHistory(priorMessages);
+            const historyMessages = serializeConversationHistory(trimConversationHistory(priorMessages, chatContextWindow));
             const requestId = activeRequestRef.current + 1;
             activeRequestRef.current = requestId;
             const runId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -225,6 +330,7 @@ export function useAI() {
 
             if (!isRetry) {
                 const userMessage: Message = {
+                    id: createMessageId(),
                     role: "user",
                     content: text,
                     parts: text ? [{ type: "text", text }] : [],
@@ -235,6 +341,7 @@ export function useAI() {
             }
 
             const assistantMessage: Message = {
+                id: createMessageId(),
                 role: "assistant",
                 content: "",
                 toolOperations: [],
@@ -392,11 +499,14 @@ export function useAI() {
 
                         const current = useChatStore.getState().currentMessages();
                         const lastMessage = current[current.length - 1];
-                        const existingContent = lastMessage?.content || "";
-                        const errorLabel = chunk.error_type ? `Error (${chunk.error_type}): ` : "Error: ";
-                        updateLastMessage({
-                            content: existingContent + "\n\n" + errorLabel + chunk.error,
-                        });
+                        const isEmptyAssistantPlaceholder = lastMessage?.role === "assistant"
+                            && !lastMessage.content.trim()
+                            && (!lastMessage.toolOperations || lastMessage.toolOperations.length === 0)
+                            && lastMessage.parts.length === 0;
+
+                        if (isEmptyAssistantPlaceholder) {
+                            removeLastMessage();
+                        }
 
                         if (chunk.error_status === 422) {
                             addDebugLog({
@@ -541,6 +651,7 @@ export function useAI() {
             appendReasoningToLastMessage,
             addToolOperation,
             updateLastMessage,
+            removeLastMessage,
             addDebugLog,
             rawStreamLoggingEnabled,
         ]
@@ -571,15 +682,15 @@ export function useAI() {
         });
 
         // Remove all messages after the last user message
-        useChatStore.getState().clearCurrentMessages();
+        clearCurrentMessages();
         const keptMessages = currentMessages.slice(0, actualIdx + 1);
 
         // Re-add kept messages manually
-        keptMessages.forEach((msg) => useChatStore.getState().addMessage(msg));
+        keptMessages.forEach((msg) => addMessage(msg));
 
         // Re-send
         await sendMessage(lastUserContent, lastUserAttachments, true);
-    }, [addDebugLog, isStreaming, sendMessage]);
+    }, [addDebugLog, addMessage, clearCurrentMessages, isStreaming, sendMessage]);
 
     return {
         messages,

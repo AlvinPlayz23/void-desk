@@ -31,18 +31,71 @@ const MAX_IMAGE_SIZE: u64 = 4 * 1024 * 1024; // 4MB
 fn is_text_extension(ext: &str) -> bool {
     matches!(
         ext,
-        "txt" | "md" | "markdown" | "json" | "jsonl"
-            | "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs"
-            | "rs" | "py" | "rb" | "go" | "java" | "c" | "cpp" | "h" | "hpp"
-            | "css" | "scss" | "less" | "html" | "htm" | "xml" | "svg"
-            | "yaml" | "yml" | "toml" | "ini" | "cfg" | "conf"
-            | "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd"
-            | "sql" | "graphql" | "gql"
-            | "env" | "gitignore" | "dockerignore" | "editorconfig"
-            | "lock" | "log" | "csv" | "tsv"
-            | "vue" | "svelte" | "astro"
-            | "kt" | "kts" | "swift" | "dart" | "lua" | "r" | "R"
-            | "tex" | "bib" | "rst" | "adoc"
+        "txt"
+            | "md"
+            | "markdown"
+            | "json"
+            | "jsonl"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "mjs"
+            | "cjs"
+            | "rs"
+            | "py"
+            | "rb"
+            | "go"
+            | "java"
+            | "c"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "css"
+            | "scss"
+            | "less"
+            | "html"
+            | "htm"
+            | "xml"
+            | "svg"
+            | "yaml"
+            | "yml"
+            | "toml"
+            | "ini"
+            | "cfg"
+            | "conf"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "fish"
+            | "ps1"
+            | "bat"
+            | "cmd"
+            | "sql"
+            | "graphql"
+            | "gql"
+            | "env"
+            | "gitignore"
+            | "dockerignore"
+            | "editorconfig"
+            | "lock"
+            | "log"
+            | "csv"
+            | "tsv"
+            | "vue"
+            | "svelte"
+            | "astro"
+            | "kt"
+            | "kts"
+            | "swift"
+            | "dart"
+            | "lua"
+            | "r"
+            | "R"
+            | "tex"
+            | "bib"
+            | "rst"
+            | "adoc"
     )
 }
 
@@ -73,7 +126,9 @@ fn mime_for_text(ext: &str) -> &'static str {
 }
 
 #[tauri::command]
-pub async fn prepare_chat_attachments(paths: Vec<String>) -> Result<Vec<PreparedAttachment>, String> {
+pub async fn prepare_chat_attachments(
+    paths: Vec<String>,
+) -> Result<Vec<PreparedAttachment>, String> {
     let mut results = Vec::new();
 
     for path_str in paths {
@@ -88,16 +143,26 @@ pub async fn prepare_chat_attachments(paths: Vec<String>) -> Result<Vec<Prepared
             .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_default();
 
-        let metadata = std::fs::metadata(&path)
-            .map_err(|e| format!("Cannot read file '{}': {}", name, e))?;
+        let metadata =
+            std::fs::metadata(&path).map_err(|e| format!("Cannot read file '{}': {}", name, e))?;
         let file_size = metadata.len();
 
-        let id = format!("attach_{}_{}", chrono::Utc::now().timestamp_millis(),
-            name.chars().filter(|c| c.is_alphanumeric()).take(16).collect::<String>());
+        let id = format!(
+            "attach_{}_{}",
+            chrono::Utc::now().timestamp_millis(),
+            name.chars()
+                .filter(|c| c.is_alphanumeric())
+                .take(16)
+                .collect::<String>()
+        );
 
         if is_image_extension(&ext) {
             if file_size > MAX_IMAGE_SIZE {
-                return Err(format!("Image '{}' is too large ({:.1}MB, max 4MB)", name, file_size as f64 / 1_048_576.0));
+                return Err(format!(
+                    "Image '{}' is too large ({:.1}MB, max 4MB)",
+                    name,
+                    file_size as f64 / 1_048_576.0
+                ));
             }
             let bytes = std::fs::read(&path)
                 .map_err(|e| format!("Failed to read image '{}': {}", name, e))?;
@@ -113,7 +178,11 @@ pub async fn prepare_chat_attachments(paths: Vec<String>) -> Result<Vec<Prepared
             });
         } else if is_text_extension(&ext) || ext.is_empty() {
             if file_size > MAX_TEXT_SIZE {
-                return Err(format!("File '{}' is too large ({:.0}KB, max 512KB)", name, file_size as f64 / 1024.0));
+                return Err(format!(
+                    "File '{}' is too large ({:.0}KB, max 512KB)",
+                    name,
+                    file_size as f64 / 1024.0
+                ));
             }
             let content = std::fs::read_to_string(&path)
                 .map_err(|e| format!("File '{}' is not valid text: {}", name, e))?;

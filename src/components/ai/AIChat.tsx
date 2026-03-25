@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo } from "react";
 import { Loader2, Sparkles, Trash2, Settings2, StopCircle, X, File as FileIcon, Plus, ChevronDown, Bug, CornerDownLeft, RefreshCcw, Paperclip } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -7,7 +7,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
-import { ChatAttachment, ChatSession, Message, ToolOperation, useChatStore } from "@/stores/chatStore";
+import {
+    ChatAttachment,
+    Message,
+    PersistedChatState,
+    ToolOperation,
+    selectCurrentContextPaths,
+    useChatStore,
+} from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -18,6 +25,9 @@ export function AIChat() {
     const deleteSession = useChatStore((state) => state.deleteSession);
     const switchSession = useChatStore((state) => state.switchSession);
     const activeSessionId = useChatStore((state) => state.activeSessionId);
+    const isHydrated = useChatStore((state) => state.isHydrated);
+    const replaceState = useChatStore((state) => state.replaceState);
+    const setHydrated = useChatStore((state) => state.setHydrated);
     const rootPath = useFileStore((state) => state.rootPath);
 
     const [input, setInput] = useState("");
@@ -28,7 +38,6 @@ export function AIChat() {
     const [showDebug, setShowDebug] = useState(false);
     const [showModelMenu, setShowModelMenu] = useState(false);
     const [draftAttachments, setDraftAttachments] = useState<ChatAttachment[]>([]);
-    const [sessions, setSessions] = useState<ChatSession[]>([]);
     const { fileTree } = useFileStore();
     const storedSessions = useChatStore((state) => state.sessions);
     const clearDebugLogs = useChatStore((state) => state.clearDebugLogs);
@@ -39,6 +48,7 @@ export function AIChat() {
     const scrollRef = useRef<HTMLDivElement>(null);
     const sessionsRef = useRef<HTMLDivElement>(null);
     const modelMenuRef = useRef<HTMLDivElement>(null);
+    const saveTimerRef = useRef<number | null>(null);
 
     const currentSession = useMemo(
         () => storedSessions.find((session) => session.id === activeSessionId) || null,
@@ -46,43 +56,92 @@ export function AIChat() {
     );
     const debugLogs = currentSession?.debugLogs || [];
 
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadChatState = async () => {
+            try {
+                const loaded = await invoke<PersistedChatState>("load_chat_state");
+                if (!cancelled) {
+                    replaceState(loaded);
+                }
+            } catch (error) {
+                console.error("Failed to load chat state:", error);
+            } finally {
+                if (!cancelled) {
+                    setHydrated(true);
+                }
+            }
+        };
+
+        loadChatState();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [replaceState, setHydrated]);
+
     // Initialize first session
     useEffect(() => {
-        if (!activeSessionId) {
+        if (!isHydrated) return;
+        if (!activeSessionId && storedSessions.length === 0) {
             createSession("New Chat", rootPath ?? null);
         }
-    }, [activeSessionId, createSession, rootPath]);
+    }, [activeSessionId, createSession, isHydrated, rootPath, storedSessions.length]);
 
-    // Load sessions
     useEffect(() => {
-        loadSessions();
+        if (!isHydrated) return;
+
+        if (saveTimerRef.current) {
+            window.clearTimeout(saveTimerRef.current);
+        }
+
+        saveTimerRef.current = window.setTimeout(() => {
+            invoke("save_chat_state", {
+                state: {
+                    sessions: storedSessions,
+                    activeSessionId,
+                } satisfies PersistedChatState,
+            }).catch((error) => {
+                console.error("Failed to save chat state:", error);
+            });
+            saveTimerRef.current = null;
+        }, 300);
+
+        return () => {
+            if (saveTimerRef.current) {
+                window.clearTimeout(saveTimerRef.current);
+                saveTimerRef.current = null;
+            }
+        };
+    }, [activeSessionId, isHydrated, storedSessions]);
+
+    const sessions = useMemo(() => {
+        const workspaceSessions = storedSessions.filter((session) => {
+            if (!session.workspacePath) return true;
+            return rootPath ? session.workspacePath === rootPath : false;
+        });
+        return [...workspaceSessions].sort((a, b) => b.lastUpdated - a.lastUpdated);
     }, [rootPath, storedSessions]);
 
-    const loadSessions = async () => {
-        try {
-            const localSessions = useChatStore.getState().sessions;
-            const workspaceSessions = localSessions.filter((session) => {
-                if (!session.workspacePath) return true;
-                return rootPath ? session.workspacePath === rootPath : false;
-            });
-            const sortedSessions = [...workspaceSessions].sort((a, b) => b.lastUpdated - a.lastUpdated);
-            setSessions(sortedSessions);
-        } catch (error) {
-            console.error("Failed to load sessions:", error);
-        }
-    };
+    const visibleSessions = useMemo(() => {
+        if (!sessionSearch.trim()) return sessions;
+        const q = sessionSearch.toLowerCase();
+        return sessions.filter((session) => {
+            if (session.name.toLowerCase().includes(q)) return true;
+            return session.messages.some((message) => message.content.toLowerCase().includes(q));
+        });
+    }, [sessionSearch, sessions]);
 
     const handleNewSession = () => {
         const id = createSession("New Chat", rootPath ?? null);
         switchSession(id);
-        loadSessions();
         setShowSessions(false);
     };
 
-    const handleDeleteSession = async (id: string) => {
+    const handleDeleteSession = (id: string) => {
         if (window.confirm("Delete this chat session?")) {
             deleteSession(id);
-            await loadSessions();
         }
     };
 
@@ -371,13 +430,7 @@ export function AIChat() {
                                         onClick={(e) => e.stopPropagation()}
                                     />
                                 </div>
-                                {sessions
-                                    .filter((session) => {
-                                        if (!sessionSearch.trim()) return true;
-                                        const q = sessionSearch.toLowerCase();
-                                        if (session.name.toLowerCase().includes(q)) return true;
-                                        return session.messages.some((m) => m.content.toLowerCase().includes(q));
-                                    })
+                                {visibleSessions
                                     .map((session) => (
                                         <div
                                             key={session.id}
@@ -485,8 +538,8 @@ export function AIChat() {
                     <>
                         {/* Messages scroll area */}
                         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-5">
-                            {messages.map((msg, idx) => (
-                                <MessageBubble key={idx} message={msg} />
+                            {messages.map((msg) => (
+                                <MessageBubble key={msg.id} message={msg} />
                             ))}
                             {isStreaming && (
                                 <div className="flex items-center gap-2 text-[10px] opacity-40 px-2 font-mono uppercase tracking-widest">
@@ -545,7 +598,7 @@ export function AIChat() {
     );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+const MessageBubble = memo(function MessageBubble({ message }: { message: Message }) {
     const isUser = message.role === "user";
     const parts = message.parts ?? [];
 
@@ -599,7 +652,7 @@ function MessageBubble({ message }: { message: Message }) {
             </div>
         </div>
     );
-}
+});
 
 interface PromptComposerProps {
     input: string;
@@ -797,8 +850,8 @@ function PromptComposer(props: PromptComposerProps) {
 }
 
 function ContextPills() {
-    const contextPaths = useChatStore((state) => state.currentContextPaths());
-    const { removeContextPath } = useChatStore();
+    const contextPaths = useChatStore(selectCurrentContextPaths);
+    const removeContextPath = useChatStore((state) => state.removeContextPath);
     if (contextPaths.length === 0) return null;
 
     return (
@@ -846,7 +899,7 @@ function ReasoningBlock({ text, innerTools }: { text: string; innerTools?: impor
     );
 }
 
-function MarkdownContent({ content }: { content: string }) {
+const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
     return (
         <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-code:text-[var(--color-accent-primary)] prose-code:bg-[var(--color-accent-primary)]/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-none prose-pre:bg-transparent prose-pre:p-0" style={{ fontFamily: "var(--font-sans)" }}>
             <ReactMarkdown
@@ -884,7 +937,7 @@ function MarkdownContent({ content }: { content: string }) {
             </ReactMarkdown>
         </div>
     );
-}
+});
 
 function ToolOperationLine({ op }: { op: ToolOperation }) {
     const [expanded, setExpanded] = useState(false);
@@ -923,7 +976,7 @@ function ToolOperationLine({ op }: { op: ToolOperation }) {
     );
 }
 
-function ToolOperationDisplay({ operations }: { operations: ToolOperation[] }) {
+const ToolOperationDisplay = memo(function ToolOperationDisplay({ operations }: { operations: ToolOperation[] }) {
     if (!operations || operations.length === 0) return null;
 
     return (
@@ -933,7 +986,7 @@ function ToolOperationDisplay({ operations }: { operations: ToolOperation[] }) {
             ))}
         </div>
     );
-}
+});
 
 function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: number; type: string; message: string }[]; clearDebugLogs: () => void }) {
     const [testOutput, setTestOutput] = useState<string>("");

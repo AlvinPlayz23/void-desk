@@ -350,52 +350,48 @@ pub async fn debug_agent_flow(
                     event_count, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
                 ));
             }
-            Ok(AgentEvent::ToolStart { name, input }) => {
+            Ok(AgentEvent::ToolStart(event)) => {
                 logs.push(format!(
                     "[{}] ToolStart: {} with input {:?}",
-                    event_count, name, input
+                    event_count, event.name, event.input
                 ));
             }
-            Ok(AgentEvent::ToolResult {
-                name,
-                result,
-                success,
-            }) => {
-                let result_preview = if result.len() > 200 {
-                    format!("{}... ({} chars)", &result[..200], result.len())
+            Ok(AgentEvent::ToolResult(event)) => {
+                let result_preview = if event.result.len() > 200 {
+                    format!("{}... ({} chars)", &event.result[..200], event.result.len())
                 } else {
-                    result.clone()
+                    event.result.clone()
                 };
                 logs.push(format!(
                     "[{}] ToolResult: {} success={} result={}",
-                    event_count, name, success, result_preview
+                    event_count, event.name, event.success, result_preview
                 ));
             }
-            Ok(AgentEvent::Debug { kind, message }) => {
-                logs.push(format!("[{}] Debug/{}: {}", event_count, kind, message));
+            Ok(AgentEvent::Debug(event)) => {
+                logs.push(format!(
+                    "[{}] Debug/{}: {}",
+                    event_count, event.kind, event.message
+                ));
             }
-            Ok(AgentEvent::Done {
-                final_text,
-                messages,
-            }) => {
+            Ok(AgentEvent::Done(event)) => {
                 logs.push(format!(
                     "[{}] Done: {} messages, final_text: {} chars",
                     event_count,
-                    messages.len(),
-                    final_text.len()
+                    event.messages.len(),
+                    event.final_text.len()
                 ));
-                if !final_text.is_empty() {
-                    let preview = if final_text.len() > 500 {
-                        format!("{}...", &final_text[..500])
+                if !event.final_text.is_empty() {
+                    let preview = if event.final_text.len() > 500 {
+                        format!("{}...", &event.final_text[..500])
                     } else {
-                        final_text.clone()
+                        event.final_text.clone()
                     };
                     logs.push(format!("Final text: {}", preview));
                 }
                 break;
             }
-            Ok(AgentEvent::Cancelled { reason, .. }) => {
-                logs.push(format!("[{}] Cancelled: {}", event_count, reason));
+            Ok(AgentEvent::Cancelled(event)) => {
+                logs.push(format!("[{}] Cancelled: {}", event_count, event.reason));
                 break;
             }
             Err(e) => {

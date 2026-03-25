@@ -4,11 +4,20 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::ai_tools;
-use crate::sdk::{AIClient, Agent, SessionStore, ToolPolicy};
+use crate::sdk::provider::{
+    ModelInfo, OpenAICompatibleConfig, OpenAICompatibleProvider, Provider,
+};
+use crate::sdk::{Agent, SessionStore, ToolPolicy};
+
+pub struct AgentBuild {
+    pub agent: Agent,
+    pub model_info: ModelInfo,
+}
 
 /// AI Service state that persists across requests
 pub struct AIService {
@@ -24,8 +33,24 @@ impl AIService {
         }
     }
 
+    pub fn from_db_path(db_path: PathBuf) -> Result<Self> {
+        Ok(Self {
+            session_store: Arc::new(SessionStore::from_db_path(db_path)?),
+            user_sessions: RwLock::new(HashMap::new()),
+        })
+    }
+
     pub fn session_store(&self) -> Arc<SessionStore> {
         self.session_store.clone()
+    }
+
+    pub fn create_provider(
+        api_key: &str,
+        base_url: &str,
+        model_id: &str,
+    ) -> Result<Arc<dyn Provider>> {
+        let config = OpenAICompatibleConfig::new(api_key, base_url, model_id);
+        Ok(Arc::new(OpenAICompatibleProvider::from_config(config)?))
     }
 
     pub fn create_agent(
@@ -34,9 +59,19 @@ impl AIService {
         model_id: &str,
         active_path: Option<&str>,
     ) -> Result<Agent> {
-        let client = AIClient::new(api_key, base_url, model_id)?;
+        Ok(Self::create_agent_build(api_key, base_url, model_id, active_path)?.agent)
+    }
 
-        let mut agent = Agent::new(client)
+    pub fn create_agent_build(
+        api_key: &str,
+        base_url: &str,
+        model_id: &str,
+        active_path: Option<&str>,
+    ) -> Result<AgentBuild> {
+        let provider = Self::create_provider(api_key, base_url, model_id)?;
+        let model_info = provider.model_info();
+
+        let mut agent_builder = Agent::builder(provider)
             .with_system_prompt(
                 r#"You are VoiDesk, a powerful autonomous AI coding assistant embedded in a professional IDE. You pair-program with the user, taking real actions on their codebase through tools. You do not just describe — you do.
 
@@ -196,7 +231,7 @@ For tasks requiring many tool calls or multiple steps:
             .map(|value| value.eq_ignore_ascii_case("true"))
             .unwrap_or(true);
 
-        agent = agent.with_tool_policy(ToolPolicy {
+        agent_builder = agent_builder.with_tool_policy(ToolPolicy {
             allow_command_tool,
             command_allowlist,
             command_timeout_ms,
@@ -204,18 +239,18 @@ For tasks requiring many tool calls or multiple steps:
         });
 
         let tools = ai_tools::get_all_tools(active_path);
-        for tool in tools {
-            agent = agent.with_tool(tool);
-        }
+        let agent = agent_builder.with_tools(tools).build();
 
-        Ok(agent)
+        Ok(AgentBuild { agent, model_info })
     }
 
     pub async fn get_or_create_session(&self, user_id: &str) -> Result<String> {
         {
             let sessions = self.user_sessions.read().await;
             if let Some(session_id) = sessions.get(user_id) {
-                return Ok(session_id.clone());
+                if self.session_store.get(session_id).await.is_some() {
+                    return Ok(session_id.clone());
+                }
             }
         }
 
@@ -229,8 +264,21 @@ For tasks requiring many tool calls or multiple steps:
     }
 
     pub async fn reset_session(&self, user_id: &str) {
+        let removed_session_id = {
+            let mut sessions = self.user_sessions.write().await;
+            sessions.remove(user_id)
+        };
+
+        if let Some(session_id) = removed_session_id {
+            self.session_store.delete(&session_id).await;
+        }
+    }
+
+    pub async fn delete_session(&self, session_id: &str) {
+        self.session_store.delete(session_id).await;
+
         let mut sessions = self.user_sessions.write().await;
-        sessions.remove(user_id);
+        sessions.retain(|_, mapped_session_id| mapped_session_id != session_id);
     }
 
     pub async fn validate_or_create_session(&self, session_id: &str) -> Result<String> {
@@ -243,6 +291,15 @@ For tasks requiring many tool calls or multiple steps:
                 .await;
             Ok(session.id)
         }
+    }
+
+    pub async fn bind_user_session(&self, user_id: &str, session_id: &str) {
+        if self.session_store.get(session_id).await.is_none() {
+            return;
+        }
+
+        let mut sessions = self.user_sessions.write().await;
+        sessions.insert(user_id.to_string(), session_id.to_string());
     }
 }
 
