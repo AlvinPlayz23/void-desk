@@ -1,4 +1,5 @@
 import { useRef, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useUIStore } from "@/stores/uiStore";
 import { useFileStore } from "@/stores/fileStore";
 import { Sidebar } from "./Sidebar";
@@ -26,9 +27,29 @@ export function MainLayout() {
         toggleAIPanel,
         toggleTerminal,
         openSettingsPage,
-    } = useUIStore();
+    } = useUIStore(
+        useShallow((state) => ({
+            sidebarWidth: state.sidebarWidth,
+            aiPanelWidth: state.aiPanelWidth,
+            terminalHeight: state.terminalHeight,
+            isSidebarVisible: state.isSidebarVisible,
+            isAIPanelVisible: state.isAIPanelVisible,
+            isTerminalVisible: state.isTerminalVisible,
+            setSidebarWidth: state.setSidebarWidth,
+            setAIPanelWidth: state.setAIPanelWidth,
+            setTerminalHeight: state.setTerminalHeight,
+            toggleSidebar: state.toggleSidebar,
+            toggleAIPanel: state.toggleAIPanel,
+            toggleTerminal: state.toggleTerminal,
+            openSettingsPage: state.openSettingsPage,
+        }))
+    );
 
-    const { openFiles } = useFileStore();
+    const { openFiles } = useFileStore(
+        useShallow((state) => ({
+            openFiles: state.openFiles,
+        }))
+    );
 
     const sidebarRef = useRef<HTMLDivElement>(null);
     const aiPanelRef = useRef<HTMLDivElement>(null);

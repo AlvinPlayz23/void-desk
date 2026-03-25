@@ -46,7 +46,7 @@ function getLanguageFromPath(path: string): string {
 }
 
 export function useLsp() {
-    const { rootPath } = useFileStore();
+    const rootPath = useFileStore((state) => state.rootPath);
     const initializedRef = useRef(false);
 
     // Initialize LSP when workspace opens

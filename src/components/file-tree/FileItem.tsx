@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { FileNode, useFileStore } from "@/stores/fileStore";
 import { useFileSystem } from "@/hooks/useFileSystem";
 import {
@@ -34,7 +35,18 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         lastSelectedPath,
         setDraggedPaths,
         clearDraggedPaths,
-    } = useFileStore();
+    } = useFileStore(
+        useShallow((state) => ({
+            currentFilePath: state.currentFilePath,
+            selectedPaths: state.selectedPaths,
+            setSelectedPaths: state.setSelectedPaths,
+            toggleSelection: state.toggleSelection,
+            selectRange: state.selectRange,
+            lastSelectedPath: state.lastSelectedPath,
+            setDraggedPaths: state.setDraggedPaths,
+            clearDraggedPaths: state.clearDraggedPaths,
+        }))
+    );
     const { revealInExplorer, deleteFile, moveItem, renameFile, batchDeleteFiles, batchMoveFiles, refreshFileTree, rootPath } = useFileSystem();
     const isSelected = currentFilePath === node.path;
     const isMultiSelected = selectedPaths.includes(node.path);

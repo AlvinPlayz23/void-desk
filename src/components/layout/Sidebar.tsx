@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { FileTree } from "@/components/file-tree/FileTree";
 import { useFileStore, FileNode } from "@/stores/fileStore";
 import { useFileSystem } from "@/hooks/useFileSystem";
@@ -16,7 +17,17 @@ import {
 } from "lucide-react";
 
 export function Sidebar() {
-    const { fileTree, rootPath, draggedPaths, clearDraggedPaths, recentProjects, removeRecentProject, clearRecentProjects } = useFileStore();
+    const { fileTree, rootPath, draggedPaths, clearDraggedPaths, recentProjects, removeRecentProject, clearRecentProjects } = useFileStore(
+        useShallow((state) => ({
+            fileTree: state.fileTree,
+            rootPath: state.rootPath,
+            draggedPaths: state.draggedPaths,
+            clearDraggedPaths: state.clearDraggedPaths,
+            recentProjects: state.recentProjects,
+            removeRecentProject: state.removeRecentProject,
+            clearRecentProjects: state.clearRecentProjects,
+        }))
+    );
     const {
         openFolder,
         refreshFileTree,
@@ -26,7 +37,12 @@ export function Sidebar() {
         batchMoveFiles,
         openFolderAt,
     } = useFileSystem();
-    const { sidebarView, setSidebarView } = useUIStore();
+    const { sidebarView, setSidebarView } = useUIStore(
+        useShallow((state) => ({
+            sidebarView: state.sidebarView,
+            setSidebarView: state.setSidebarView,
+        }))
+    );
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [isRootDragOver, setIsRootDragOver] = useState(false);

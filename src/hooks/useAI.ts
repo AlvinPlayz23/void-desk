@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useShallow } from "zustand/react/shallow";
+import { selectActiveAISettings, useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useFileSystem } from "@/hooks/useFileSystem";
 import {
@@ -247,8 +248,10 @@ const optimizeImageAttachmentForTransport = async (
 
 export function useAI() {
     const [isStreaming, setIsStreaming] = useState(false);
-    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled, chatContextWindow } = useSettingsStore();
-    const { rootPath } = useFileStore();
+    const activeAISettings = useSettingsStore(useShallow(selectActiveAISettings));
+    const rawStreamLoggingEnabled = useSettingsStore((state) => state.rawStreamLoggingEnabled);
+    const chatContextWindow = useSettingsStore((state) => state.chatContextWindow);
+    const rootPath = useFileStore((state) => state.rootPath);
     const { refreshFileTree } = useFileSystem();
     const messages = useChatStore(selectCurrentMessages);
     const activeSessionId = useChatStore((state) => state.activeSessionId);
@@ -308,6 +311,7 @@ export function useAI() {
 
             const imageAttachmentCount = attachments.filter((attachment) => attachment.kind === "image").length;
             const textAttachmentCount = attachments.length - imageAttachmentCount;
+            const { apiKey, baseUrl, aiModels, selectedModelId } = activeAISettings;
             const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
             const activeModel = aiModels.find((model) => model.id === activeModelId);
             const activeModelSupportsImages = activeModel?.supportsImages ?? false;
@@ -605,8 +609,8 @@ export function useAI() {
                     sessionId: activeSessionId || "",
                     historyMessages,
                     message: fullMessage,
-                    apiKey: openAIKey,
-                    baseUrl: openAIBaseUrl,
+                    apiKey,
+                    baseUrl,
                     modelId: activeModelId,
                     contextWindowTokens: chatContextWindow,
                     imageAttachments: imageAttachments.length > 0 ? imageAttachments : null,
@@ -640,10 +644,7 @@ export function useAI() {
         [
             isStreaming,
             activeSessionId,
-            openAIKey,
-            openAIBaseUrl,
-            selectedModelId,
-            aiModels,
+            activeAISettings,
             chatContextWindow,
             rootPath,
             addMessage,

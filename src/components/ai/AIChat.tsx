@@ -5,6 +5,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useShallow } from "zustand/react/shallow";
 import { useAI } from "@/hooks/useAI";
 import { useUIStore } from "@/stores/uiStore";
 import {
@@ -16,7 +17,7 @@ import {
     useChatStore,
 } from "@/stores/chatStore";
 import { useFileStore } from "@/stores/fileStore";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { AIProviderPreset, selectActiveAISettings, useSettingsStore } from "@/stores/settingsStore";
 
 export function AIChat() {
     const { messages, isStreaming, sendMessage, stopStreaming, retryLastMessage } = useAI();
@@ -36,18 +37,23 @@ export function AIChat() {
     const [showSessions, setShowSessions] = useState(false);
     const [sessionSearch, setSessionSearch] = useState("");
     const [showDebug, setShowDebug] = useState(false);
+    const [showPresetMenu, setShowPresetMenu] = useState(false);
     const [showModelMenu, setShowModelMenu] = useState(false);
     const [draftAttachments, setDraftAttachments] = useState<ChatAttachment[]>([]);
-    const { fileTree } = useFileStore();
+    const fileTree = useFileStore((state) => state.fileTree);
     const storedSessions = useChatStore((state) => state.sessions);
     const clearDebugLogs = useChatStore((state) => state.clearDebugLogs);
     const addDebugLog = useChatStore((state) => state.addDebugLog);
-    const aiModels = useSettingsStore((state) => state.aiModels);
-    const selectedModelId = useSettingsStore((state) => state.selectedModelId);
+    const activeAISettings = useSettingsStore(useShallow(selectActiveAISettings));
+    const providerPresetsEnabled = useSettingsStore((state) => state.providerPresetsEnabled);
+    const providerPresets = useSettingsStore((state) => state.providerPresets);
+    const selectedProviderPresetId = useSettingsStore((state) => state.selectedProviderPresetId);
+    const setSelectedProviderPresetId = useSettingsStore((state) => state.setSelectedProviderPresetId);
     const setSelectedModelId = useSettingsStore((state) => state.setSelectedModelId);
+    const setPresetSelectedModelId = useSettingsStore((state) => state.setPresetSelectedModelId);
     const scrollRef = useRef<HTMLDivElement>(null);
     const sessionsRef = useRef<HTMLDivElement>(null);
-    const modelMenuRef = useRef<HTMLDivElement>(null);
+    const presetMenuRef = useRef<HTMLDivElement>(null);
     const saveTimerRef = useRef<number | null>(null);
 
     const currentSession = useMemo(
@@ -152,7 +158,8 @@ export function AIChat() {
                 setShowSessions(false);
                 setSessionSearch("");
             }
-            if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+            if (presetMenuRef.current && !presetMenuRef.current.contains(e.target as Node)) {
+                setShowPresetMenu(false);
                 setShowModelMenu(false);
             }
         };
@@ -185,10 +192,13 @@ export function AIChat() {
         }
     }, [messages]);
 
-    const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+    const activePreset = activeAISettings.activePreset;
+    const aiModels = activeAISettings.aiModels;
+    const activeModelId = activeAISettings.selectedModelId || aiModels[0]?.id || "gpt-4o";
     const activeModelName =
         aiModels.find((model) => model.id === activeModelId)?.name || activeModelId || "Model";
-    const activeModel = aiModels.find((m) => m.id === activeModelId);
+    const activeModel = activeAISettings.activeModel || aiModels.find((m) => m.id === activeModelId);
+    const activePresetName = activePreset?.name || "Preset";
     const supportsImages = activeModel?.supportsImages ?? false;
     const summarizeAttachments = (attachments: ChatAttachment[]) =>
         attachments
@@ -501,13 +511,21 @@ export function AIChat() {
                             handleSend={handleSend}
                             handleStop={handleStop}
                             isStreaming={isStreaming}
+                            providerPresetsEnabled={providerPresetsEnabled}
+                            providerPresets={providerPresets}
+                            activePresetName={activePresetName}
+                            activePresetId={selectedProviderPresetId}
                             activeModelName={activeModelName}
                             activeModelId={activeModelId}
                             aiModels={aiModels}
+                            showPresetMenu={showPresetMenu}
+                            setShowPresetMenu={setShowPresetMenu}
                             showModelMenu={showModelMenu}
+                            presetMenuRef={presetMenuRef}
                             setShowModelMenu={setShowModelMenu}
-                            modelMenuRef={modelMenuRef}
+                            setSelectedProviderPresetId={setSelectedProviderPresetId}
                             setSelectedModelId={setSelectedModelId}
+                            setPresetSelectedModelId={setPresetSelectedModelId}
                             showFileSearch={showFileSearch}
                             filteredFiles={filteredFiles}
                             handleSelectFile={handleSelectFile}
@@ -573,13 +591,21 @@ export function AIChat() {
                                 handleSend={handleSend}
                                 handleStop={handleStop}
                                 isStreaming={isStreaming}
+                                providerPresetsEnabled={providerPresetsEnabled}
+                                providerPresets={providerPresets}
+                                activePresetName={activePresetName}
+                                activePresetId={selectedProviderPresetId}
                                 activeModelName={activeModelName}
                                 activeModelId={activeModelId}
                                 aiModels={aiModels}
+                                showPresetMenu={showPresetMenu}
+                                setShowPresetMenu={setShowPresetMenu}
                                 showModelMenu={showModelMenu}
+                                presetMenuRef={presetMenuRef}
                                 setShowModelMenu={setShowModelMenu}
-                                modelMenuRef={modelMenuRef}
+                                setSelectedProviderPresetId={setSelectedProviderPresetId}
                                 setSelectedModelId={setSelectedModelId}
+                                setPresetSelectedModelId={setPresetSelectedModelId}
                                 showFileSearch={showFileSearch}
                                 filteredFiles={filteredFiles}
                                 handleSelectFile={handleSelectFile}
@@ -661,13 +687,21 @@ interface PromptComposerProps {
     handleSend: () => void;
     handleStop: () => void;
     isStreaming: boolean;
+    providerPresetsEnabled: boolean;
+    providerPresets: AIProviderPreset[];
+    activePresetName: string;
+    activePresetId: string;
     activeModelName: string;
     activeModelId: string;
     aiModels: { id: string; name?: string; supportsImages?: boolean }[];
+    showPresetMenu: boolean;
+    setShowPresetMenu: (show: boolean) => void;
     showModelMenu: boolean;
     setShowModelMenu: (show: boolean) => void;
-    modelMenuRef: React.RefObject<HTMLDivElement | null>;
+    presetMenuRef: React.RefObject<HTMLDivElement | null>;
+    setSelectedProviderPresetId: (id: string) => void;
     setSelectedModelId: (id: string) => void;
+    setPresetSelectedModelId: (presetId: string, modelId: string) => void;
     showFileSearch: boolean;
     filteredFiles: string[];
     handleSelectFile: (path: string) => void;
@@ -687,13 +721,21 @@ function PromptComposer(props: PromptComposerProps) {
         handleSend,
         handleStop,
         isStreaming,
+        providerPresetsEnabled,
+        providerPresets,
+        activePresetName,
+        activePresetId,
         activeModelName,
         activeModelId,
         aiModels,
+        showPresetMenu,
+        setShowPresetMenu,
         showModelMenu,
         setShowModelMenu,
-        modelMenuRef,
+        presetMenuRef,
+        setSelectedProviderPresetId,
         setSelectedModelId,
+        setPresetSelectedModelId,
         showFileSearch,
         filteredFiles,
         handleSelectFile,
@@ -797,15 +839,91 @@ function PromptComposer(props: PromptComposerProps) {
                         <span>to send</span>
                     </div>
 
-                    <div className="flex items-center gap-2" ref={modelMenuRef as React.RefObject<HTMLDivElement>}>
-                        <button
-                            onClick={() => setShowModelMenu(!showModelMenu)}
-                            className="text-[9px] font-bold text-[var(--color-text-muted)] tracking-tighter uppercase hover:text-[var(--color-text-tertiary)] transition-colors cursor-pointer"
-                            title="Select model"
-                            disabled={aiModels.length === 0}
-                        >
-                            {activeModelName}
-                        </button>
+                    <div className="flex items-center gap-2">
+                        <div className="relative" ref={presetMenuRef as React.RefObject<HTMLDivElement>}>
+                            <button
+                                onClick={() => {
+                                    if (providerPresetsEnabled) {
+                                        setShowPresetMenu(!showPresetMenu);
+                                        setShowModelMenu(false);
+                                    } else {
+                                        setShowModelMenu(!showModelMenu);
+                                    }
+                                }}
+                                className="flex items-center gap-1 text-[9px] font-bold text-[var(--color-text-muted)] tracking-tighter uppercase hover:text-[var(--color-text-tertiary)] transition-colors cursor-pointer"
+                                title={providerPresetsEnabled ? "Select preset and model" : "Select model"}
+                                disabled={providerPresetsEnabled ? providerPresets.length === 0 : aiModels.length === 0}
+                            >
+                                <span>{providerPresetsEnabled ? `${activePresetName} / ${activeModelName}` : activeModelName}</span>
+                                <ChevronDown className={`w-3 h-3 transition-transform ${showPresetMenu || showModelMenu ? "rotate-180" : ""}`} />
+                            </button>
+                            {((providerPresetsEnabled && showPresetMenu) || (!providerPresetsEnabled && showModelMenu)) && (
+                                <div className={`absolute right-0 w-60 max-h-64 overflow-y-auto bg-[var(--color-surface-overlay)] border border-[var(--color-border-default)] rounded-xl shadow-xl z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
+                                    {providerPresetsEnabled && !showModelMenu && providerPresets.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            onClick={() => {
+                                                setSelectedProviderPresetId(preset.id);
+                                                setShowPresetMenu(true);
+                                                setShowModelMenu(true);
+                                            }}
+                                            className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] last:border-b-0 ${preset.id === activePresetId ? "text-[var(--color-accent-primary)]" : "text-[var(--color-text-secondary)]"}`}
+                                        >
+                                            <div className="truncate font-medium">
+                                                {preset.name || "Unnamed preset"}
+                                            </div>
+                                            <div className="text-[10px] text-[var(--color-text-muted)] truncate">{preset.baseUrl}</div>
+                                        </button>
+                                    ))}
+                                    {providerPresetsEnabled && showModelMenu && (
+                                        <>
+                                            <button
+                                                onClick={() => setShowModelMenu(false)}
+                                                className="w-full text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)] hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)]"
+                                            >
+                                                Back To Presets
+                                            </button>
+                                            <div className="px-3 py-2 text-[10px] uppercase tracking-widest text-[var(--color-text-muted)] border-b border-[var(--color-border-subtle)]">
+                                                {activePresetName}
+                                            </div>
+                                            {aiModels.map((model, index) => (
+                                                <button
+                                                    key={`${model.id}-${index}`}
+                                                    onClick={() => {
+                                                        if (activePresetId) {
+                                                            setPresetSelectedModelId(activePresetId, model.id);
+                                                        }
+                                                        setShowPresetMenu(false);
+                                                        setShowModelMenu(false);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] last:border-b-0 ${model.id === activeModelId ? "text-[var(--color-accent-primary)]" : "text-[var(--color-text-secondary)]"}`}
+                                                >
+                                                    <div className="truncate font-medium">
+                                                        {model.name || model.id || "Unnamed model"}
+                                                    </div>
+                                                    <div className="text-[10px] text-[var(--color-text-muted)] truncate">{model.id}</div>
+                                                </button>
+                                            ))}
+                                        </>
+                                    )}
+                                    {!providerPresetsEnabled && aiModels.map((model, index) => (
+                                        <button
+                                            key={`${model.id}-${index}`}
+                                            onClick={() => {
+                                                setSelectedModelId(model.id);
+                                                setShowModelMenu(false);
+                                            }}
+                                            className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] last:border-b-0 ${model.id === activeModelId ? "text-[var(--color-accent-primary)]" : "text-[var(--color-text-secondary)]"}`}
+                                        >
+                                            <div className="truncate font-medium">
+                                                {model.name || model.id || "Unnamed model"}
+                                            </div>
+                                            <div className="text-[10px] text-[var(--color-text-muted)] truncate">{model.id}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         {isStreaming ? (
                             <button
                                 onClick={handleStop}
@@ -822,25 +940,6 @@ function PromptComposer(props: PromptComposerProps) {
                                 <span className="text-[9px]">^</span>
                                 <CornerDownLeft className="w-2.5 h-2.5" />
                             </button>
-                        )}
-                        {showModelMenu && aiModels.length > 0 && (
-                            <div className={`absolute right-3 w-52 max-h-56 overflow-y-auto bg-[var(--color-surface-overlay)] border border-[var(--color-border-default)] rounded-xl shadow-xl z-50 ${dockedBottom ? "bottom-full mb-2" : "top-full mt-2"}`}>
-                                {aiModels.map((model, index) => (
-                                    <button
-                                        key={`${model.id}-${index}`}
-                                        onClick={() => {
-                                            setSelectedModelId(model.id);
-                                            setShowModelMenu(false);
-                                        }}
-                                        className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--color-void-700)] border-b border-[var(--color-border-subtle)] last:border-b-0 ${model.id === activeModelId ? "text-[var(--color-accent-primary)]" : "text-[var(--color-text-secondary)]"}`}
-                                    >
-                                        <div className="truncate font-medium">
-                                            {model.name || model.id || "Unnamed model"}
-                                        </div>
-                                        <div className="text-[10px] text-[var(--color-text-muted)] truncate">{model.id}</div>
-                                    </button>
-                                ))}
-                            </div>
                         )}
                     </div>
                 </div>
@@ -991,7 +1090,9 @@ const ToolOperationDisplay = memo(function ToolOperationDisplay({ operations }: 
 function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: number; type: string; message: string }[]; clearDebugLogs: () => void }) {
     const [testOutput, setTestOutput] = useState<string>("");
     const [testLoading, setTestLoading] = useState(false);
-    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, rawStreamLoggingEnabled, setRawStreamLoggingEnabled } = useSettingsStore();
+    const { apiKey, baseUrl, selectedModelId, aiModels } = useSettingsStore(useShallow(selectActiveAISettings));
+    const rawStreamLoggingEnabled = useSettingsStore((state) => state.rawStreamLoggingEnabled);
+    const setRawStreamLoggingEnabled = useSettingsStore((state) => state.setRawStreamLoggingEnabled);
     const modelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
     const visibleLogs = debugLogs.slice(-250);
     const logCounts = visibleLogs.reduce<Record<string, number>>((acc, log) => {
@@ -1016,8 +1117,8 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
         setTestOutput("Running tool call test...\n");
         try {
             const result = await invoke<string>("debug_tool_call", {
-                apiKey: openAIKey,
-                baseUrl: openAIBaseUrl,
+                apiKey,
+                baseUrl,
                 modelId,
             });
             setTestOutput(result);
@@ -1032,8 +1133,8 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
         setTestOutput("Running stream test...\n");
         try {
             const result = await invoke<string>("debug_stream_response", {
-                apiKey: openAIKey,
-                baseUrl: openAIBaseUrl,
+                apiKey,
+                baseUrl,
                 modelId,
             });
             setTestOutput(result);
@@ -1049,8 +1150,8 @@ function DebugPanel({ debugLogs, clearDebugLogs }: { debugLogs: { timestamp: num
         try {
             const rootPath = useFileStore.getState().rootPath;
             const result = await invoke<string>("debug_agent_flow", {
-                apiKey: openAIKey,
-                baseUrl: openAIBaseUrl,
+                apiKey,
+                baseUrl,
                 modelId,
                 projectPath: rootPath,
             });

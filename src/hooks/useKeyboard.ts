@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useFileStore } from "@/stores/fileStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useFileSystem } from "./useFileSystem";
@@ -13,8 +14,23 @@ interface ShortcutHandler {
 }
 
 export function useKeyboard() {
-    const { openFiles, currentFilePath } = useFileStore();
-    const { openCommandPalette, openSettingsPage, closeSettingsPage, isSettingsPageOpen, toggleSidebar, toggleAIPanel, toggleTerminal } = useUIStore();
+    const { openFiles, currentFilePath } = useFileStore(
+        useShallow((state) => ({
+            openFiles: state.openFiles,
+            currentFilePath: state.currentFilePath,
+        }))
+    );
+    const { openCommandPalette, openSettingsPage, closeSettingsPage, isSettingsPageOpen, toggleSidebar, toggleAIPanel, toggleTerminal } = useUIStore(
+        useShallow((state) => ({
+            openCommandPalette: state.openCommandPalette,
+            openSettingsPage: state.openSettingsPage,
+            closeSettingsPage: state.closeSettingsPage,
+            isSettingsPageOpen: state.isSettingsPageOpen,
+            toggleSidebar: state.toggleSidebar,
+            toggleAIPanel: state.toggleAIPanel,
+            toggleTerminal: state.toggleTerminal,
+        }))
+    );
     const { saveFile, openFolder } = useFileSystem();
 
     const currentFile = openFiles.find((f) => f.path === currentFilePath);

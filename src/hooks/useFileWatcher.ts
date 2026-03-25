@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { useShallow } from "zustand/react/shallow";
 import { useFileStore } from "@/stores/fileStore";
 
 interface FileChangeEvent {
@@ -32,7 +33,12 @@ function convertToFileNode(node: TauriFileNode): import("@/stores/fileStore").Fi
  * Refreshes the file tree when external changes are detected.
  */
 export function useFileWatcher() {
-    const { rootPath, setFileTree } = useFileStore();
+    const { rootPath, setFileTree } = useFileStore(
+        useShallow((state) => ({
+            rootPath: state.rootPath,
+            setFileTree: state.setFileTree,
+        }))
+    );
     const unlistenRef = useRef<UnlistenFn | null>(null);
     const isWatchingRef = useRef(false);
 
@@ -110,4 +116,3 @@ export function useFileWatcher() {
         isWatching: isWatchingRef.current,
     };
 }
-

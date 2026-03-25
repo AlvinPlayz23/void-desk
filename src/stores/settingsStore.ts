@@ -16,6 +16,44 @@ export interface AIModelConfig {
     supportsImages: boolean;
 }
 
+export interface AIProviderPreset {
+    id: string;
+    name: string;
+    apiKey: string;
+    baseUrl: string;
+    models: AIModelConfig[];
+    selectedModelId: string;
+}
+
+export interface ActiveAISettings {
+    providerPresetsEnabled: boolean;
+    apiKey: string;
+    baseUrl: string;
+    aiModels: AIModelConfig[];
+    selectedModelId: string;
+    activeModel: AIModelConfig | null;
+    activePreset: AIProviderPreset | null;
+}
+
+const FALLBACK_AI_MODEL: AIModelConfig = {
+    id: "gpt-4o",
+    name: "gpt-4o",
+    supportsImages: false,
+};
+
+const FALLBACK_AI_MODELS: AIModelConfig[] = [FALLBACK_AI_MODEL];
+
+const FALLBACK_PROVIDER_PRESET: AIProviderPreset = {
+    id: "default-provider",
+    name: "Default Provider",
+    apiKey: "",
+    baseUrl: "https://api.openai.com",
+    models: FALLBACK_AI_MODELS,
+    selectedModelId: "gpt-4o",
+};
+
+const FALLBACK_PROVIDER_PRESETS: AIProviderPreset[] = [FALLBACK_PROVIDER_PRESET];
+
 export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
     { id: "save", name: "Save File", key: "s", ctrl: true },
     { id: "openFolder", name: "Open Folder", key: "o", ctrl: true },
@@ -34,6 +72,9 @@ interface SettingsState {
     openAIBaseUrl: string;
     aiModels: AIModelConfig[];
     selectedModelId: string;
+    providerPresetsEnabled: boolean;
+    providerPresets: AIProviderPreset[];
+    selectedProviderPresetId: string;
     inlineCompletionsEnabled: boolean;
     rawStreamLoggingEnabled: boolean;
     chatContextWindow: number;
@@ -60,6 +101,10 @@ interface SettingsState {
     updateAIModel: (id: string, updates: Partial<AIModelConfig>) => void;
     removeAIModel: (id: string) => void;
     setSelectedModelId: (id: string) => void;
+    setProviderPresetsEnabled: (enabled: boolean) => void;
+    setProviderPresets: (presets: AIProviderPreset[]) => void;
+    setSelectedProviderPresetId: (id: string) => void;
+    setPresetSelectedModelId: (presetId: string, modelId: string) => void;
     setInlineCompletionsEnabled: (enabled: boolean) => void;
     setRawStreamLoggingEnabled: (enabled: boolean) => void;
     setChatContextWindow: (tokens: number) => void;
@@ -84,6 +129,127 @@ interface SettingsState {
     resetSettings: () => void;
 }
 
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com";
+
+export const createDefaultAIModel = (): AIModelConfig => ({
+    ...FALLBACK_AI_MODEL,
+});
+
+export const normalizeAIModels = (models: unknown): AIModelConfig[] => {
+    if (!Array.isArray(models) || models.length === 0) {
+        return [createDefaultAIModel()];
+    }
+
+    const normalized = models.map((model) => {
+        const raw = model as Partial<AIModelConfig> | null | undefined;
+        return {
+            id: typeof raw?.id === "string" ? raw.id : "",
+            name: typeof raw?.name === "string" ? raw.name : "",
+            supportsImages: Boolean(raw?.supportsImages),
+        };
+    });
+
+    return normalized.length > 0 ? normalized : [createDefaultAIModel()];
+};
+
+export const createProviderPreset = (overrides: Partial<AIProviderPreset> = {}): AIProviderPreset => {
+    const models = normalizeAIModels(overrides.models);
+    const selectedModelId =
+        typeof overrides.selectedModelId === "string" && models.some((model) => model.id === overrides.selectedModelId)
+            ? overrides.selectedModelId
+            : models[0]?.id || "";
+
+    return {
+        id: overrides.id || `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: overrides.name || "New Preset",
+        apiKey: overrides.apiKey || "",
+        baseUrl: overrides.baseUrl || DEFAULT_OPENAI_BASE_URL,
+        models,
+        selectedModelId,
+    };
+};
+
+export const getDefaultProviderPresets = (): AIProviderPreset[] => [
+    createProviderPreset({
+        ...FALLBACK_PROVIDER_PRESET,
+        models: [createDefaultAIModel()],
+    }),
+];
+
+const normalizeProviderPresets = (presets: unknown): AIProviderPreset[] => {
+    if (!Array.isArray(presets) || presets.length === 0) {
+        return getDefaultProviderPresets();
+    }
+
+    const normalized = presets.map((preset, index) => {
+        const raw = preset as Partial<AIProviderPreset> | null | undefined;
+        return createProviderPreset({
+            id: typeof raw?.id === "string" && raw.id.trim() ? raw.id : `preset-${index + 1}`,
+            name: typeof raw?.name === "string" ? raw.name : `Preset ${index + 1}`,
+            apiKey: typeof raw?.apiKey === "string" ? raw.apiKey : "",
+            baseUrl: typeof raw?.baseUrl === "string" && raw.baseUrl.trim() ? raw.baseUrl : DEFAULT_OPENAI_BASE_URL,
+            models: raw?.models,
+            selectedModelId: typeof raw?.selectedModelId === "string" ? raw.selectedModelId : undefined,
+        });
+    });
+
+    return normalized.length > 0 ? normalized : getDefaultProviderPresets();
+};
+
+const normalizeSelectedProviderPresetId = (selectedProviderPresetId: unknown, presets: AIProviderPreset[]) => {
+    if (typeof selectedProviderPresetId === "string" && presets.some((preset) => preset.id === selectedProviderPresetId)) {
+        return selectedProviderPresetId;
+    }
+    return presets[0]?.id || "";
+};
+
+const getDefaultState = () => ({
+    openAIKey: "",
+    openAIBaseUrl: DEFAULT_OPENAI_BASE_URL,
+    aiModels: [createDefaultAIModel()],
+    selectedModelId: "gpt-4o",
+    providerPresetsEnabled: false,
+    providerPresets: getDefaultProviderPresets(),
+    selectedProviderPresetId: "default-provider",
+    inlineCompletionsEnabled: true,
+    rawStreamLoggingEnabled: false,
+    chatContextWindow: 32000,
+    editorFontSize: 14,
+    editorFontFamily: "JetBrains Mono",
+    uiScale: 100,
+    tabSize: 4,
+    wordWrap: false,
+    lineNumbers: true,
+    minimap: true,
+    keybindings: [...DEFAULT_KEYBINDINGS],
+});
+
+export const selectActiveAISettings = (state: Pick<
+    SettingsState,
+    "openAIKey" | "openAIBaseUrl" | "aiModels" | "selectedModelId" | "providerPresetsEnabled" | "providerPresets" | "selectedProviderPresetId"
+>): ActiveAISettings => {
+    const presets = state.providerPresets.length > 0 ? state.providerPresets : FALLBACK_PROVIDER_PRESETS;
+    const legacyModels = state.aiModels.length > 0 ? state.aiModels : FALLBACK_AI_MODELS;
+    const activePreset = state.providerPresetsEnabled
+        ? presets.find((preset) => preset.id === state.selectedProviderPresetId) || presets[0] || null
+        : null;
+    const aiModels = activePreset?.models.length ? activePreset.models : legacyModels;
+    const selectedModelId = activePreset
+        ? activePreset.selectedModelId || aiModels[0]?.id || ""
+        : state.selectedModelId || legacyModels[0]?.id || "";
+    const activeModel = aiModels.find((model) => model.id === selectedModelId) || aiModels[0] || null;
+
+    return {
+        providerPresetsEnabled: state.providerPresetsEnabled,
+        apiKey: activePreset?.apiKey || state.openAIKey,
+        baseUrl: activePreset?.baseUrl || state.openAIBaseUrl || DEFAULT_OPENAI_BASE_URL,
+        aiModels,
+        selectedModelId: activeModel?.id || selectedModelId,
+        activeModel,
+        activePreset,
+    };
+};
+
 const getKeybindingKey = (kb: KeyBinding) => {
     const parts: string[] = [];
     if (kb.ctrl) parts.push("Ctrl");
@@ -96,34 +262,25 @@ const getKeybindingKey = (kb: KeyBinding) => {
 export const useSettingsStore = create<SettingsState>()(
     persist(
         (set, get) => ({
-            // AI Settings
-            openAIKey: "",
-            openAIBaseUrl: "https://api.openai.com",
-            aiModels: [{ id: "gpt-4o", name: "gpt-4o", supportsImages: false }],
-            selectedModelId: "gpt-4o",
-            inlineCompletionsEnabled: true,
-            rawStreamLoggingEnabled: false,
-            chatContextWindow: 32000,
-
-            // Appearance Settings
-            editorFontSize: 14,
-            editorFontFamily: "JetBrains Mono",
-            uiScale: 100,
-
-            // Editor Settings
-            tabSize: 4,
-            wordWrap: false,
-            lineNumbers: true,
-            minimap: true,
-
-            // Keybindings
-            keybindings: [...DEFAULT_KEYBINDINGS],
+            ...getDefaultState(),
 
             // Actions - AI
             setOpenAIKey: (key) => set({ openAIKey: key }),
             setOpenAIBaseUrl: (url) => set({ openAIBaseUrl: url }),
-            setAIModels: (models) => set({ aiModels: models }),
-            addAIModel: (model) => set((state) => ({ aiModels: [...state.aiModels, model] })),
+            setAIModels: (models) => set((state) => {
+                const normalized = normalizeAIModels(models);
+                const selectedModelId = normalized.some((model) => model.id === state.selectedModelId)
+                    ? state.selectedModelId
+                    : normalized[0]?.id || "";
+                return {
+                    aiModels: normalized,
+                    selectedModelId,
+                };
+            }),
+            addAIModel: (model) => set((state) => {
+                const aiModels = [...state.aiModels, model];
+                return { aiModels };
+            }),
             updateAIModel: (id, updates) => set((state) => ({
                 aiModels: state.aiModels.map((model) =>
                     model.id === id ? { ...model, ...updates } : model
@@ -131,14 +288,44 @@ export const useSettingsStore = create<SettingsState>()(
             })),
             removeAIModel: (id) => set((state) => {
                 const filtered = state.aiModels.filter((model) => model.id !== id);
+                const normalized = normalizeAIModels(filtered);
                 const nextSelected =
-                    state.selectedModelId === id ? filtered[0]?.id || "" : state.selectedModelId;
+                    state.selectedModelId === id ? normalized[0]?.id || "" : state.selectedModelId;
                 return {
-                    aiModels: filtered,
+                    aiModels: normalized,
                     selectedModelId: nextSelected,
                 };
             }),
             setSelectedModelId: (id) => set({ selectedModelId: id }),
+            setProviderPresetsEnabled: (enabled) => set({ providerPresetsEnabled: enabled }),
+            setProviderPresets: (presets) => set((state) => {
+                const normalized = normalizeProviderPresets(presets);
+                const selectedProviderPresetId = normalizeSelectedProviderPresetId(state.selectedProviderPresetId, normalized);
+                return {
+                    providerPresets: normalized,
+                    selectedProviderPresetId,
+                };
+            }),
+            setSelectedProviderPresetId: (id) => set((state) => {
+                const normalized = normalizeProviderPresets(state.providerPresets);
+                return {
+                    selectedProviderPresetId: normalizeSelectedProviderPresetId(id, normalized),
+                };
+            }),
+            setPresetSelectedModelId: (presetId, modelId) => set((state) => ({
+                providerPresets: state.providerPresets.map((preset) => {
+                    if (preset.id !== presetId) {
+                        return preset;
+                    }
+                    const selectedModelId = preset.models.some((model) => model.id === modelId)
+                        ? modelId
+                        : preset.models[0]?.id || "";
+                    return {
+                        ...preset,
+                        selectedModelId,
+                    };
+                }),
+            })),
             setInlineCompletionsEnabled: (enabled) => set({ inlineCompletionsEnabled: enabled }),
             setRawStreamLoggingEnabled: (enabled) => set({ rawStreamLoggingEnabled: enabled }),
             setChatContextWindow: (tokens) => set({ chatContextWindow: Math.max(1024, Math.min(256000, Math.round(tokens || 1024))) }),
@@ -178,37 +365,50 @@ export const useSettingsStore = create<SettingsState>()(
 
             // Reset all settings
             resetSettings: () => set({
-                openAIKey: "",
-                openAIBaseUrl: "https://api.openai.com",
-                aiModels: [{ id: "gpt-4o", name: "gpt-4o", supportsImages: false }],
-                selectedModelId: "gpt-4o",
-                inlineCompletionsEnabled: true,
-                rawStreamLoggingEnabled: false,
-                chatContextWindow: 32000,
-                editorFontSize: 14,
-                editorFontFamily: "JetBrains Mono",
-                uiScale: 100,
-                tabSize: 4,
-                wordWrap: false,
-                lineNumbers: true,
-                minimap: true,
-                keybindings: [...DEFAULT_KEYBINDINGS],
+                ...getDefaultState(),
             }),
         }),
         {
             name: "voidesk-settings",
-            version: 2,
+            version: 3,
             migrate: (persistedState: any, version: number) => {
-                if (version < 2 && persistedState) {
-                    const state = persistedState as any;
-                    if (Array.isArray(state.aiModels)) {
-                        state.aiModels = state.aiModels.map((m: any) => ({
-                            ...m,
-                            supportsImages: m.supportsImages ?? false,
-                        }));
-                    }
+                if (!persistedState) {
+                    return getDefaultState();
                 }
-                return persistedState;
+
+                const state = persistedState as any;
+                const nextState = {
+                    ...getDefaultState(),
+                    ...state,
+                };
+
+                nextState.aiModels = normalizeAIModels(nextState.aiModels);
+                nextState.selectedModelId = nextState.aiModels.some((model: AIModelConfig) => model.id === nextState.selectedModelId)
+                    ? nextState.selectedModelId
+                    : nextState.aiModels[0]?.id || "";
+
+                if (version < 3) {
+                    nextState.providerPresetsEnabled = false;
+                    nextState.providerPresets = [
+                        createProviderPreset({
+                            id: "default-provider",
+                            name: "Default Provider",
+                            apiKey: nextState.openAIKey || "",
+                            baseUrl: nextState.openAIBaseUrl || DEFAULT_OPENAI_BASE_URL,
+                            models: nextState.aiModels,
+                            selectedModelId: nextState.selectedModelId,
+                        }),
+                    ];
+                    nextState.selectedProviderPresetId = nextState.providerPresets[0]?.id || "";
+                } else {
+                    nextState.providerPresets = normalizeProviderPresets(nextState.providerPresets);
+                    nextState.selectedProviderPresetId = normalizeSelectedProviderPresetId(
+                        nextState.selectedProviderPresetId,
+                        nextState.providerPresets
+                    );
+                }
+
+                return nextState;
             },
         }
     )

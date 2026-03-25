@@ -9,7 +9,7 @@ interface FileTreeProps {
 }
 
 export function FileTree({ nodes, depth, rootPath }: FileTreeProps) {
-    const { toggleFolder } = useFileStore();
+    const toggleFolder = useFileStore((state) => state.toggleFolder);
     const { openFileInEditor } = useFileSystem();
 
     const handleClick = async (node: FileNode) => {

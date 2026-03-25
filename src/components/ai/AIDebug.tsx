@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useShallow } from "zustand/react/shallow";
+import { selectActiveAISettings, useSettingsStore } from "@/stores/settingsStore";
 
 export function AIDebug() {
     const [output, setOutput] = useState<string>("");
     const [loading, setLoading] = useState(false);
-    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels } = useSettingsStore();
+    const { apiKey, baseUrl, selectedModelId, aiModels } = useSettingsStore(useShallow(selectActiveAISettings));
     const modelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
 
     const runDebugToolCall = async () => {
@@ -13,8 +14,8 @@ export function AIDebug() {
         setOutput("Running debug_tool_call...\n");
         try {
             const result = await invoke<string>("debug_tool_call", {
-                apiKey: openAIKey,
-                baseUrl: openAIBaseUrl,
+                apiKey,
+                baseUrl,
                 modelId,
             });
             setOutput(result);
@@ -29,8 +30,8 @@ export function AIDebug() {
         setOutput("Running debug_stream_response...\n");
         try {
             const result = await invoke<string>("debug_stream_response", {
-                apiKey: openAIKey,
-                baseUrl: openAIBaseUrl,
+                apiKey,
+                baseUrl,
                 modelId,
             });
             setOutput(result);
@@ -62,7 +63,7 @@ export function AIDebug() {
             </div>
 
             <div className="text-sm text-zinc-400 mb-2">
-                API: {openAIBaseUrl} | Model: {modelId}
+                API: {baseUrl} | Model: {modelId}
             </div>
 
             <pre className="flex-1 overflow-auto bg-black p-4 rounded text-xs font-mono whitespace-pre-wrap">

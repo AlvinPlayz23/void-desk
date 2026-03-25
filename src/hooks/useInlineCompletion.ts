@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useShallow } from "zustand/react/shallow";
+import { selectActiveAISettings, useSettingsStore } from "@/stores/settingsStore";
 
 export interface InlineCompletionResult {
     text: string;
@@ -16,7 +17,8 @@ export interface InlineCompletionState {
 export function useInlineCompletion() {
     const [completion, setCompletion] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const { openAIKey, openAIBaseUrl, selectedModelId, aiModels, inlineCompletionsEnabled } = useSettingsStore();
+    const activeAISettings = useSettingsStore(useShallow(selectActiveAISettings));
+    const inlineCompletionsEnabled = useSettingsStore((state) => state.inlineCompletionsEnabled);
 
     const debounceRef = useRef<ReturnType<typeof setTimeout>>();
     const abortRef = useRef(false);
@@ -41,7 +43,7 @@ export function useInlineCompletion() {
 
     const requestCompletion = useCallback(
         (content: string, cursorPos: number, filePath: string, language: string) => {
-            if (!openAIKey || !inlineCompletionsEnabled) {
+            if (!activeAISettings.apiKey || !inlineCompletionsEnabled) {
                 return;
             }
 
@@ -83,14 +85,14 @@ export function useInlineCompletion() {
                         }
                     };
 
-                    const activeModelId = selectedModelId || aiModels[0]?.id || "gpt-4o";
+                    const activeModelId = activeAISettings.selectedModelId || activeAISettings.aiModels[0]?.id || "gpt-4o";
                     await invoke("get_inline_completion", {
                         content,
                         cursorPos,
                         filePath,
                         language,
-                        apiKey: openAIKey,
-                        baseUrl: openAIBaseUrl,
+                        apiKey: activeAISettings.apiKey,
+                        baseUrl: activeAISettings.baseUrl,
                         modelId: activeModelId,
                         onEvent,
                     });
@@ -102,7 +104,7 @@ export function useInlineCompletion() {
                 }
             }, 500);
         },
-        [openAIKey, openAIBaseUrl, selectedModelId, aiModels, inlineCompletionsEnabled]
+        [activeAISettings, inlineCompletionsEnabled]
     );
 
     // These functions use the ref for synchronous access

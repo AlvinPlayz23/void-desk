@@ -34,6 +34,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { closeBrackets, closeBracketsKeymap, autocompletion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { hoverTooltip, Tooltip } from "@codemirror/view";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { useShallow } from "zustand/react/shallow";
 import {
     search,
     searchKeymap,
@@ -169,9 +170,24 @@ export function getLanguageName(filePath: string): string {
 export function CodeEditor() {
     const editorRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView>();
-    const { openFiles, currentFilePath, updateFileContent } = useFileStore();
-    const { setCursor } = useEditorStore();
-    const { editorFontSize, editorFontFamily, tabSize, wordWrap, lineNumbers: showLineNumbers, minimap } = useSettingsStore();
+    const { openFiles, currentFilePath, updateFileContent } = useFileStore(
+        useShallow((state) => ({
+            openFiles: state.openFiles,
+            currentFilePath: state.currentFilePath,
+            updateFileContent: state.updateFileContent,
+        }))
+    );
+    const setCursor = useEditorStore((state) => state.setCursor);
+    const { editorFontSize, editorFontFamily, tabSize, wordWrap, lineNumbers: showLineNumbers, minimap } = useSettingsStore(
+        useShallow((state) => ({
+            editorFontSize: state.editorFontSize,
+            editorFontFamily: state.editorFontFamily,
+            tabSize: state.tabSize,
+            wordWrap: state.wordWrap,
+            lineNumbers: state.lineNumbers,
+            minimap: state.minimap,
+        }))
+    );
     const appTheme = useUIStore((state) => state.theme);
     const { didOpen, didChange, getCompletions, getHover } = useLsp();
     const { completion, isLoading, requestCompletion, clearCompletion, acceptAll, acceptWord, hasCompletion } = useInlineCompletion();

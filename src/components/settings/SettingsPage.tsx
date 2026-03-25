@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
     X,
     Search,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useUIStore, SettingsCategory, Theme } from "@/stores/uiStore";
-import { useSettingsStore, KeyBinding } from "@/stores/settingsStore";
+import { AIProviderPreset, createProviderPreset, useSettingsStore, KeyBinding } from "@/stores/settingsStore";
 
 interface SettingsCategoryItem {
     id: SettingsCategory;
@@ -60,6 +61,9 @@ interface PendingSettings {
     openAIBaseUrl?: string;
     aiModels?: { id: string; name: string; supportsImages: boolean }[];
     selectedModelId?: string;
+    providerPresetsEnabled?: boolean;
+    providerPresets?: AIProviderPreset[];
+    selectedProviderPresetId?: string;
     inlineCompletionsEnabled?: boolean;
     chatContextWindow?: number;
     // Editor
@@ -72,8 +76,54 @@ interface PendingSettings {
 }
 
 export function SettingsPage() {
-    const { isSettingsPageOpen, closeSettingsPage, settingsCategory, setSettingsCategory, theme, setTheme } = useUIStore();
-    const settings = useSettingsStore();
+    const { isSettingsPageOpen, closeSettingsPage, settingsCategory, setSettingsCategory, theme, setTheme } = useUIStore(
+        useShallow((state) => ({
+            isSettingsPageOpen: state.isSettingsPageOpen,
+            closeSettingsPage: state.closeSettingsPage,
+            settingsCategory: state.settingsCategory,
+            setSettingsCategory: state.setSettingsCategory,
+            theme: state.theme,
+            setTheme: state.setTheme,
+        }))
+    );
+    const settings = useSettingsStore(
+        useShallow((state) => ({
+            openAIKey: state.openAIKey,
+            openAIBaseUrl: state.openAIBaseUrl,
+            aiModels: state.aiModels,
+            selectedModelId: state.selectedModelId,
+            providerPresetsEnabled: state.providerPresetsEnabled,
+            providerPresets: state.providerPresets,
+            selectedProviderPresetId: state.selectedProviderPresetId,
+            inlineCompletionsEnabled: state.inlineCompletionsEnabled,
+            chatContextWindow: state.chatContextWindow,
+            editorFontSize: state.editorFontSize,
+            editorFontFamily: state.editorFontFamily,
+            uiScale: state.uiScale,
+            tabSize: state.tabSize,
+            wordWrap: state.wordWrap,
+            lineNumbers: state.lineNumbers,
+            minimap: state.minimap,
+            keybindings: state.keybindings,
+            setOpenAIKey: state.setOpenAIKey,
+            setOpenAIBaseUrl: state.setOpenAIBaseUrl,
+            setAIModels: state.setAIModels,
+            setSelectedModelId: state.setSelectedModelId,
+            setProviderPresetsEnabled: state.setProviderPresetsEnabled,
+            setProviderPresets: state.setProviderPresets,
+            setSelectedProviderPresetId: state.setSelectedProviderPresetId,
+            setInlineCompletionsEnabled: state.setInlineCompletionsEnabled,
+            setChatContextWindow: state.setChatContextWindow,
+            setEditorFontSize: state.setEditorFontSize,
+            setEditorFontFamily: state.setEditorFontFamily,
+            setUIScale: state.setUIScale,
+            setTabSize: state.setTabSize,
+            setWordWrap: state.setWordWrap,
+            setLineNumbers: state.setLineNumbers,
+            setMinimap: state.setMinimap,
+            updateKeybinding: state.updateKeybinding,
+        }))
+    );
     const [searchQuery, setSearchQuery] = useState("");
     const [pending, setPending] = useState<PendingSettings>({});
     const [hasChanges, setHasChanges] = useState(false);
@@ -106,6 +156,9 @@ export function SettingsPage() {
         if (pending.openAIBaseUrl !== undefined) settings.setOpenAIBaseUrl(pending.openAIBaseUrl);
         if (pending.aiModels !== undefined) settings.setAIModels(pending.aiModels);
         if (pending.selectedModelId !== undefined) settings.setSelectedModelId(pending.selectedModelId);
+        if (pending.providerPresetsEnabled !== undefined) settings.setProviderPresetsEnabled(pending.providerPresetsEnabled);
+        if (pending.providerPresets !== undefined) settings.setProviderPresets(pending.providerPresets);
+        if (pending.selectedProviderPresetId !== undefined) settings.setSelectedProviderPresetId(pending.selectedProviderPresetId);
         if (pending.inlineCompletionsEnabled !== undefined) settings.setInlineCompletionsEnabled(pending.inlineCompletionsEnabled);
         if (pending.chatContextWindow !== undefined) settings.setChatContextWindow(pending.chatContextWindow);
         if (pending.tabSize !== undefined) settings.setTabSize(pending.tabSize);
@@ -246,12 +299,18 @@ export function SettingsPage() {
                                 currentBaseUrl={getValue("openAIBaseUrl", settings.openAIBaseUrl)}
                                 currentModels={getValue("aiModels", settings.aiModels)}
                                 currentSelectedModelId={getValue("selectedModelId", settings.selectedModelId)}
+                                currentProviderPresetsEnabled={getValue("providerPresetsEnabled", settings.providerPresetsEnabled)}
+                                currentProviderPresets={getValue("providerPresets", settings.providerPresets)}
+                                currentSelectedProviderPresetId={getValue("selectedProviderPresetId", settings.selectedProviderPresetId)}
                                 currentInlineEnabled={getValue("inlineCompletionsEnabled", settings.inlineCompletionsEnabled)}
                                 currentChatContextWindow={getValue("chatContextWindow", settings.chatContextWindow)}
                                 onKeyChange={(v) => updatePending("openAIKey", v)}
                                 onBaseUrlChange={(v) => updatePending("openAIBaseUrl", v)}
                                 onModelsChange={(v) => updatePending("aiModels", v)}
                                 onSelectedModelIdChange={(v) => updatePending("selectedModelId", v)}
+                                onProviderPresetsEnabledChange={(v) => updatePending("providerPresetsEnabled", v)}
+                                onProviderPresetsChange={(v) => updatePending("providerPresets", v)}
+                                onSelectedProviderPresetIdChange={(v) => updatePending("selectedProviderPresetId", v)}
                                 onInlineEnabledChange={(v) => updatePending("inlineCompletionsEnabled", v)}
                                 onChatContextWindowChange={(v) => updatePending("chatContextWindow", v)}
                             />
@@ -461,12 +520,18 @@ interface AISettingsProps {
     currentBaseUrl: string;
     currentModels: { id: string; name: string; supportsImages: boolean }[];
     currentSelectedModelId: string;
+    currentProviderPresetsEnabled: boolean;
+    currentProviderPresets: AIProviderPreset[];
+    currentSelectedProviderPresetId: string;
     currentInlineEnabled: boolean;
     currentChatContextWindow: number;
     onKeyChange: (key: string) => void;
     onBaseUrlChange: (url: string) => void;
     onModelsChange: (models: { id: string; name: string; supportsImages: boolean }[]) => void;
     onSelectedModelIdChange: (id: string) => void;
+    onProviderPresetsEnabledChange: (enabled: boolean) => void;
+    onProviderPresetsChange: (presets: AIProviderPreset[]) => void;
+    onSelectedProviderPresetIdChange: (id: string) => void;
     onInlineEnabledChange: (enabled: boolean) => void;
     onChatContextWindowChange: (tokens: number) => void;
 }
@@ -476,28 +541,77 @@ function AISettings({
     currentBaseUrl,
     currentModels,
     currentSelectedModelId,
+    currentProviderPresetsEnabled,
+    currentProviderPresets,
+    currentSelectedProviderPresetId,
     currentInlineEnabled,
     currentChatContextWindow,
     onKeyChange,
     onBaseUrlChange,
     onModelsChange,
     onSelectedModelIdChange,
+    onProviderPresetsEnabledChange,
+    onProviderPresetsChange,
+    onSelectedProviderPresetIdChange,
     onInlineEnabledChange,
     onChatContextWindowChange,
 }: AISettingsProps) {
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-    const selectedModel = currentModels.find((model) => model.id === currentSelectedModelId) || currentModels[0];
+    const normalizedPresets = currentProviderPresets.length > 0 ? currentProviderPresets : [createProviderPreset()];
+    const activePreset =
+        normalizedPresets.find((preset) => preset.id === currentSelectedProviderPresetId) || normalizedPresets[0];
+    const presetModels = activePreset?.models?.length ? activePreset.models : [{ id: "", name: "", supportsImages: false }];
+    const selectedModel = currentProviderPresetsEnabled
+        ? presetModels.find((model) => model.id === activePreset?.selectedModelId) || presetModels[0]
+        : currentModels.find((model) => model.id === currentSelectedModelId) || currentModels[0];
     const selectedModelId = selectedModel?.id || "";
+    const activeApiKey = currentProviderPresetsEnabled ? activePreset?.apiKey || "" : currentKey;
+    const activeBaseUrl = currentProviderPresetsEnabled ? activePreset?.baseUrl || currentBaseUrl : currentBaseUrl;
+
+    const applyProviderPresets = (presets: AIProviderPreset[]) => {
+        const normalized = presets.length > 0 ? presets : [createProviderPreset()];
+        onProviderPresetsChange(normalized);
+
+        const nextSelectedPresetId = normalized.some((preset) => preset.id === currentSelectedProviderPresetId)
+            ? currentSelectedProviderPresetId
+            : normalized[0]?.id || "";
+        onSelectedProviderPresetIdChange(nextSelectedPresetId);
+    };
+
+    const updatePreset = (presetId: string, updates: Partial<AIProviderPreset>) => {
+        applyProviderPresets(
+            normalizedPresets.map((preset) => {
+                if (preset.id !== presetId) {
+                    return preset;
+                }
+
+                const nextModels = updates.models ?? preset.models;
+                const nextSelectedModelId =
+                    updates.selectedModelId && nextModels.some((model) => model.id === updates.selectedModelId)
+                        ? updates.selectedModelId
+                        : nextModels.some((model) => model.id === preset.selectedModelId)
+                            ? preset.selectedModelId
+                            : nextModels[0]?.id || "";
+
+                return {
+                    ...preset,
+                    ...updates,
+                    models: nextModels,
+                    selectedModelId: nextSelectedModelId,
+                };
+            })
+        );
+    };
 
     const handleTest = async () => {
         setIsTesting(true);
         setTestResult(null);
         try {
             const result = await invoke<string>("test_ai_connection", {
-                apiKey: currentKey,
-                baseUrl: currentBaseUrl,
+                apiKey: activeApiKey,
+                baseUrl: activeBaseUrl,
                 modelId: selectedModelId,
             });
             setTestResult({ success: true, message: result });
@@ -512,122 +626,333 @@ function AISettings({
         <>
             <SettingSection title="AI Settings" description="Configure your AI assistant and inline completions">
                 <div className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                            <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
-                            OpenAI API Key
-                        </label>
-                        <input
-                            type="password"
-                            value={currentKey}
-                            onChange={(e) => onKeyChange(e.target.value)}
-                            placeholder="sk-..."
-                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                        />
-                        <p className="text-xs text-[var(--color-text-muted)]">Your API key is stored locally on this machine.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                            <Globe className="w-4 h-4 text-[var(--color-text-muted)]" />
-                            Base URL
-                        </label>
-                        <input
-                            type="text"
-                            value={currentBaseUrl}
-                            onChange={(e) => onBaseUrlChange(e.target.value)}
-                            placeholder="https://api.openai.com"
-                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                        />
-                        <p className="text-xs text-[var(--color-text-muted)]">Change this if you use an OpenAI-compatible provider (e.g., OpenRouter).</p>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                            <Sparkles className="w-4 h-4 text-[var(--color-text-muted)]" />
-                            Models
-                        </label>
-                        <div className="space-y-3">
-                            {currentModels.map((model, index) => (
-                                <div key={`${model.id}-${index}`} className="grid grid-cols-2 gap-3">
-                                    <input
-                                        type="text"
-                                        value={model.name}
-                                        onChange={(e) =>
-                                            onModelsChange(
-                                                currentModels.map((item, idx) =>
-                                                    idx === index ? { ...item, name: e.target.value } : item
-                                                )
+                    <SettingRow
+                        label="Provider Presets"
+                        description="Turn this on to manage multiple provider groups, each with its own base URL and model list."
+                    >
+                        <Toggle
+                            checked={currentProviderPresetsEnabled}
+                            onChange={(enabled) => {
+                                onProviderPresetsEnabledChange(enabled);
+                                if (enabled) {
+                                    if (currentProviderPresets.length === 0) {
+                                        const migratedPreset = createProviderPreset({
+                                            id: "default-provider",
+                                            name: "Default Provider",
+                                            apiKey: currentKey,
+                                            baseUrl: currentBaseUrl,
+                                            models: currentModels,
+                                            selectedModelId: currentSelectedModelId,
+                                        });
+                                        onProviderPresetsChange([migratedPreset]);
+                                        onSelectedProviderPresetIdChange(migratedPreset.id);
+                                    } else if (currentKey && currentProviderPresets.every((preset) => !preset.apiKey)) {
+                                        onProviderPresetsChange(
+                                            currentProviderPresets.map((preset, index) =>
+                                                index === 0 ? { ...preset, apiKey: currentKey } : preset
                                             )
-                                        }
-                                        placeholder="Display name"
-                                        className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                                    />
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="text"
-                                            value={model.id}
-                                            onChange={(e) =>
-                                                onModelsChange(
-                                                    currentModels.map((item, idx) =>
-                                                        idx === index ? { ...item, id: e.target.value } : item
-                                                    )
-                                                )
-                                            }
-                                            placeholder="Model ID"
-                                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
-                                        />
-                                        <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer whitespace-nowrap" title="Model supports image input">
+                                        );
+                                    }
+                                }
+                            }}
+                        />
+                    </SettingRow>
+
+                    {!currentProviderPresetsEnabled ? (
+                        <>
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                    <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                    OpenAI API Key
+                                </label>
+                                <input
+                                    type="password"
+                                    value={currentKey}
+                                    onChange={(e) => onKeyChange(e.target.value)}
+                                    placeholder="sk-..."
+                                    className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                />
+                                <p className="text-xs text-[var(--color-text-muted)]">Your API key is stored locally on this machine.</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                    <Globe className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                    Base URL
+                                </label>
+                                <input
+                                    type="text"
+                                    value={currentBaseUrl}
+                                    onChange={(e) => onBaseUrlChange(e.target.value)}
+                                    placeholder="https://api.openai.com"
+                                    className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                />
+                                <p className="text-xs text-[var(--color-text-muted)]">Change this if you use an OpenAI-compatible provider (e.g., OpenRouter).</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                    <Sparkles className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                    Models
+                                </label>
+                                <div className="space-y-3">
+                                    {currentModels.map((model, index) => (
+                                        <div key={`${model.id}-${index}`} className="grid grid-cols-2 gap-3">
                                             <input
-                                                type="checkbox"
-                                                checked={model.supportsImages}
+                                                type="text"
+                                                value={model.name}
                                                 onChange={(e) =>
                                                     onModelsChange(
                                                         currentModels.map((item, idx) =>
-                                                            idx === index ? { ...item, supportsImages: e.target.checked } : item
+                                                            idx === index ? { ...item, name: e.target.value } : item
                                                         )
                                                     )
                                                 }
-                                                className="w-3.5 h-3.5 rounded border-gray-600 bg-transparent accent-emerald-500"
+                                                placeholder="Display name"
+                                                className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
                                             />
-                                            Vision
-                                        </label>
-                                        {currentModels.length > 1 && (
-                                            <button
-                                                onClick={() => onModelsChange(currentModels.filter((_, idx) => idx !== index))}
-                                                className="p-2 text-[var(--color-text-muted)] hover:text-red-400"
-                                                title="Remove model"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-                                        )}
-                                    </div>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={model.id}
+                                                    onChange={(e) =>
+                                                        onModelsChange(
+                                                            currentModels.map((item, idx) =>
+                                                                idx === index ? { ...item, id: e.target.value } : item
+                                                            )
+                                                        )
+                                                    }
+                                                    placeholder="Model ID"
+                                                    className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                                />
+                                                <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer whitespace-nowrap" title="Model supports image input">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={model.supportsImages}
+                                                        onChange={(e) =>
+                                                            onModelsChange(
+                                                                currentModels.map((item, idx) =>
+                                                                    idx === index ? { ...item, supportsImages: e.target.checked } : item
+                                                                )
+                                                            )
+                                                        }
+                                                        className="w-3.5 h-3.5 rounded border-gray-600 bg-transparent accent-emerald-500"
+                                                    />
+                                                    Vision
+                                                </label>
+                                                {currentModels.length > 1 && (
+                                                    <button
+                                                        onClick={() => onModelsChange(currentModels.filter((_, idx) => idx !== index))}
+                                                        className="p-2 text-[var(--color-text-muted)] hover:text-red-400"
+                                                        title="Remove model"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button
+                                        onClick={() => onModelsChange([...currentModels, { id: "", name: "", supportsImages: false }])}
+                                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" />
+                                        Add Model
+                                    </button>
                                 </div>
-                            ))}
-                            <button
-                                onClick={() => onModelsChange([...currentModels, { id: "", name: "", supportsImages: false }])}
-                                className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all"
-                            >
-                                <Plus className="w-3.5 h-3.5" />
-                                Add Model
-                            </button>
-                        </div>
-                        <p className="text-xs text-[var(--color-text-muted)]">Add multiple models with a display name and model ID.</p>
-                    </div>
+                                <p className="text-xs text-[var(--color-text-muted)]">Add multiple models with a display name and model ID.</p>
+                            </div>
 
-                    <SettingRow label="Default Model" description="Select the model used in the chat panel.">
-                        <select
-                            value={currentSelectedModelId}
-                            onChange={(e) => onSelectedModelIdChange(e.target.value)}
-                            className="bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
-                        >
-                            {currentModels.map((model, index) => (
-                                <option key={`${model.id}-${index}`} value={model.id}>
-                                    {model.name || model.id || "Unnamed model"}
-                                </option>
-                            ))}
-                        </select>
-                    </SettingRow>
+                            <SettingRow label="Default Model" description="Select the model used in the chat panel.">
+                                <select
+                                    value={currentSelectedModelId}
+                                    onChange={(e) => onSelectedModelIdChange(e.target.value)}
+                                    className="bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
+                                >
+                                    {currentModels.map((model, index) => (
+                                        <option key={`${model.id}-${index}`} value={model.id}>
+                                            {model.name || model.id || "Unnamed model"}
+                                        </option>
+                                    ))}
+                                </select>
+                            </SettingRow>
+                        </>
+                    ) : (
+                        <>
+                            <SettingRow label="Active Preset" description="This preset is selected first in the chat composer.">
+                                <select
+                                    value={activePreset?.id || ""}
+                                    onChange={(e) => onSelectedProviderPresetIdChange(e.target.value)}
+                                    className="min-w-56 bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
+                                >
+                                    {normalizedPresets.map((preset) => (
+                                        <option key={preset.id} value={preset.id}>
+                                            {preset.name || "Unnamed preset"}
+                                        </option>
+                                    ))}
+                                </select>
+                            </SettingRow>
+
+                            <div className="space-y-4">
+                                {normalizedPresets.map((preset, presetIndex) => (
+                                    <div key={preset.id} className="rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-void-850)] p-4 space-y-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex-1">
+                                                <label className="text-xs uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                    Preset Name
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={preset.name}
+                                                    onChange={(e) => updatePreset(preset.id, { name: e.target.value })}
+                                                    placeholder={`Preset ${presetIndex + 1}`}
+                                                    className="mt-1 w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                                />
+                                            </div>
+                                            {normalizedPresets.length > 1 && (
+                                                <button
+                                                    onClick={() => applyProviderPresets(normalizedPresets.filter((item) => item.id !== preset.id))}
+                                                    className="p-2 text-[var(--color-text-muted)] hover:text-red-400"
+                                                    title="Remove preset"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                                <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                                API Key
+                                            </label>
+                                            <input
+                                                type="password"
+                                                value={preset.apiKey}
+                                                onChange={(e) => updatePreset(preset.id, { apiKey: e.target.value })}
+                                                placeholder="sk-..."
+                                                className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                                <Globe className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                                Base URL
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={preset.baseUrl}
+                                                onChange={(e) => updatePreset(preset.id, { baseUrl: e.target.value })}
+                                                placeholder="https://api.openai.com"
+                                                className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                                <Sparkles className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                                Models
+                                            </label>
+                                            <div className="space-y-3">
+                                                {preset.models.map((model, index) => (
+                                                    <div key={`${preset.id}-${model.id}-${index}`} className="grid grid-cols-2 gap-3">
+                                                        <input
+                                                            type="text"
+                                                            value={model.name}
+                                                            onChange={(e) =>
+                                                                updatePreset(preset.id, {
+                                                                    models: preset.models.map((item, idx) =>
+                                                                        idx === index ? { ...item, name: e.target.value } : item
+                                                                    ),
+                                                                })
+                                                            }
+                                                            placeholder="Display name"
+                                                            className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                                        />
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="text"
+                                                                value={model.id}
+                                                                onChange={(e) =>
+                                                                    updatePreset(preset.id, {
+                                                                        models: preset.models.map((item, idx) =>
+                                                                            idx === index ? { ...item, id: e.target.value } : item
+                                                                        ),
+                                                                    })
+                                                                }
+                                                                placeholder="Model ID"
+                                                                className="w-full bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-4 py-2.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)] transition-colors"
+                                                            />
+                                                            <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer whitespace-nowrap" title="Model supports image input">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={model.supportsImages}
+                                                                    onChange={(e) =>
+                                                                        updatePreset(preset.id, {
+                                                                            models: preset.models.map((item, idx) =>
+                                                                                idx === index ? { ...item, supportsImages: e.target.checked } : item
+                                                                            ),
+                                                                        })
+                                                                    }
+                                                                    className="w-3.5 h-3.5 rounded border-gray-600 bg-transparent accent-emerald-500"
+                                                                />
+                                                                Vision
+                                                            </label>
+                                                            {preset.models.length > 1 && (
+                                                                <button
+                                                                    onClick={() =>
+                                                                        updatePreset(preset.id, {
+                                                                            models: preset.models.filter((_, idx) => idx !== index),
+                                                                        })
+                                                                    }
+                                                                    className="p-2 text-[var(--color-text-muted)] hover:text-red-400"
+                                                                    title="Remove model"
+                                                                >
+                                                                    <X className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <button
+                                                    onClick={() =>
+                                                        updatePreset(preset.id, {
+                                                            models: [...preset.models, { id: "", name: "", supportsImages: false }],
+                                                        })
+                                                    }
+                                                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                    Add Model
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <SettingRow label="Default Model" description="Used when this preset is selected in chat.">
+                                            <select
+                                                value={preset.selectedModelId}
+                                                onChange={(e) => updatePreset(preset.id, { selectedModelId: e.target.value })}
+                                                className="min-w-56 bg-[var(--color-void-800)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-primary)]"
+                                            >
+                                                {preset.models.map((model, index) => (
+                                                    <option key={`${preset.id}-${model.id}-${index}`} value={model.id}>
+                                                        {model.name || model.id || "Unnamed model"}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </SettingRow>
+                                    </div>
+                                ))}
+                                <button
+                                    onClick={() => applyProviderPresets([...normalizedPresets, createProviderPreset({ name: `Preset ${normalizedPresets.length + 1}` })])}
+                                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-700)] transition-all"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Add Preset
+                                </button>
+                            </div>
+                        </>
+                    )}
 
                     <SettingRow label="Inline AI Completions" description="Show AI-powered ghost text suggestions as you type. Press Tab to accept.">
                         <Toggle checked={currentInlineEnabled} onChange={onInlineEnabledChange} />
@@ -655,7 +980,7 @@ function AISettings({
                     <div className="flex items-center gap-3 pt-4">
                         <button
                             onClick={handleTest}
-                            disabled={isTesting || !currentKey}
+                            disabled={isTesting || !activeApiKey}
                             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-700)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-void-600)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Test Connection"}
@@ -694,7 +1019,12 @@ interface KeybindingsSettingsProps {
 }
 
 function KeybindingsSettings({ keybindings, onKeybindingsChange }: KeybindingsSettingsProps) {
-    const { resetKeybindings, getKeybindingConflicts } = useSettingsStore();
+    const { resetKeybindings, getKeybindingConflicts } = useSettingsStore(
+        useShallow((state) => ({
+            resetKeybindings: state.resetKeybindings,
+            getKeybindingConflicts: state.getKeybindingConflicts,
+        }))
+    );
     const [editingId, setEditingId] = useState<string | null>(null);
     const [pendingKeys, setPendingKeys] = useState<{ key: string; ctrl: boolean; shift: boolean; alt: boolean } | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);

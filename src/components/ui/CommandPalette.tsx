@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Search, Command, File, Settings, Moon, PanelLeft, PanelRight } from 'lucide-react';
 import Fuse from 'fuse.js';
+import { useShallow } from "zustand/react/shallow";
 import { useUIStore } from '@/stores/uiStore';
 import { useFileStore, FileNode } from '@/stores/fileStore';
 import { useFileSystem } from '@/hooks/useFileSystem';
@@ -31,9 +32,25 @@ export function CommandPalette() {
         toggleTheme,
         openSettingsPage,
         theme
-    } = useUIStore();
+    } = useUIStore(
+        useShallow((state) => ({
+            isCommandPaletteVisible: state.isCommandPaletteVisible,
+            closeCommandPalette: state.closeCommandPalette,
+            commandPaletteMode: state.commandPaletteMode,
+            toggleSidebar: state.toggleSidebar,
+            toggleAIPanel: state.toggleAIPanel,
+            toggleTheme: state.toggleTheme,
+            openSettingsPage: state.openSettingsPage,
+            theme: state.theme,
+        }))
+    );
 
-    const { fileTree, rootPath } = useFileStore();
+    const { fileTree, rootPath } = useFileStore(
+        useShallow((state) => ({
+            fileTree: state.fileTree,
+            rootPath: state.rootPath,
+        }))
+    );
     const { openFileInEditor } = useFileSystem();
 
     const [search, setSearch] = useState('');

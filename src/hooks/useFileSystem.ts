@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useShallow } from "zustand/react/shallow";
 import { FileNode, useFileStore } from "@/stores/fileStore";
 
 interface FileEntry {
@@ -27,7 +28,14 @@ function convertToFileNode(node: TauriFileNode): FileNode {
 }
 
 export function useFileSystem() {
-    const { setRootPath, setFileTree, openFile, rootPath } = useFileStore();
+    const { setRootPath, setFileTree, openFile, rootPath } = useFileStore(
+        useShallow((state) => ({
+            setRootPath: state.setRootPath,
+            setFileTree: state.setFileTree,
+            openFile: state.openFile,
+            rootPath: state.rootPath,
+        }))
+    );
 
     // Open folder picker dialog
     const openFolder = async (): Promise<string | null> => {

@@ -1,8 +1,16 @@
 import { useFileStore } from "@/stores/fileStore";
 import { X, FileCode } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 export function EditorTabs() {
-    const { openFiles, currentFilePath, setCurrentFile, closeFile } = useFileStore();
+    const { openFiles, currentFilePath, setCurrentFile, closeFile } = useFileStore(
+        useShallow((state) => ({
+            openFiles: state.openFiles,
+            currentFilePath: state.currentFilePath,
+            setCurrentFile: state.setCurrentFile,
+            closeFile: state.closeFile,
+        }))
+    );
 
     const getFileIcon = (filename: string) => {
         const ext = filename.split(".").pop()?.toLowerCase();

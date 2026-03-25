@@ -1,5 +1,6 @@
 import { useFileStore } from "@/stores/fileStore";
 import { useEditorStore } from "@/stores/editorStore";
+import { useShallow } from "zustand/react/shallow";
 import {
     GitBranch,
     AlertCircle,
@@ -9,8 +10,18 @@ import {
 } from "lucide-react";
 
 export function StatusBar() {
-    const { openFiles, currentFilePath } = useFileStore();
-    const { cursorLine, cursorColumn } = useEditorStore();
+    const { openFiles, currentFilePath } = useFileStore(
+        useShallow((state) => ({
+            openFiles: state.openFiles,
+            currentFilePath: state.currentFilePath,
+        }))
+    );
+    const { cursorLine, cursorColumn } = useEditorStore(
+        useShallow((state) => ({
+            cursorLine: state.cursorLine,
+            cursorColumn: state.cursorColumn,
+        }))
+    );
 
     const currentFile = openFiles.find((f) => f.path === currentFilePath);
 
