@@ -1,0 +1,23 @@
+  Workspace tooling is shallow compared with VS Code
+
+  - The project tree is built as a recursive filesystem snapshot, not an indexed workspace model. It stops at a fixed depth during restore, and there’s no evidence of a persistent file index, symbol index, or background project graph.
+    That makes large repos slower and less intelligent to navigate (project_commands.rs:67, useSessionRestore.ts:44).
+  - Search is implemented as a custom full-tree scan with glob filtering, size limits, and a 10k result cap. That works, but it’s not the same as a maintained workspace index or ripgrep-backed pipeline with richer ignore semantics and
+    better scale (search_commands.rs:138, search_commands.rs:184).
+  - The workspace is effectively single-root and file-centric. I don’t see multi-root workspace support, git/dependency views, problems panel, task system, or a symbol/navigation layer that ties files together beyond open/search/rename/
+    move.
+  - The file explorer is good for CRUD and drag-drop, but it is still basically a UI over filesystem operations, not a richer workspace service.
+
+  Editor core is functional, but not yet IDE-grade
+
+  - The editor is built on CodeMirror 6, which is solid, but the intelligence surface is still narrow: completion and hover only. There’s no diagnostics pipeline, go-to-definition, find references, rename symbol, code actions, formatting,
+    or semantic highlights in the current LSP bridge (lsp_commands.rs:30, lsp_commands.rs:46).
+  - The editor view is fully destroyed and recreated when the file, theme, or editor settings change. That is simple and works, but it is not ideal for preserving state, minimizing re-render cost, or supporting more advanced editor
+    interactions cleanly (CodeEditor.tsx:316, CodeEditor.tsx:439).
+  - LSP support is wired per file and language, but it’s still mostly “editor assist” rather than a full IDE language pipeline. The hook sends didOpen, didChange, completion, and hover, but not the broader LSP lifecycle that makes VS Code
+    feel smart (useLsp.ts:56).
+  - A lot of the “smartness” is split between LSP and custom AI ghost text. That’s fine, but it also means the editor intelligence is fragmented instead of being one cohesive language subsystem.
+
+  Bottom line
+  It’s not bad. It’s a strong product skeleton. But technically it is still tooling-complete in appearance, not in depth. The missing pieces are the ones that make an IDE feel “native” to large codebases: indexing, diagnostics, symbol
+  navigation, refactoring, and a workspace graph.

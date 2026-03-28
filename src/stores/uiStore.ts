@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type Theme = "dark" | "light" | "obsidian";
-export type SettingsCategory = "appearance" | "ai" | "keybindings" | "editor";
+export type SettingsCategory = "appearance" | "ai" | "keybindings" | "editor" | "extensions";
 
 interface UIState {
     // Theme
@@ -22,7 +22,7 @@ interface UIState {
     isSettingsPageOpen: boolean;
     settingsCategory: SettingsCategory;
     commandPaletteMode: "command" | "file";
-    sidebarView: "explorer" | "search";
+    sidebarView: "explorer" | "search" | "problems" | "symbols";
 
     // Actions
     setTheme: (theme: Theme) => void;
@@ -31,7 +31,7 @@ interface UIState {
     setSidebarWidth: (width: number) => void;
     setAIPanelWidth: (width: number) => void;
 
-    setSidebarView: (view: "explorer" | "search") => void;
+    setSidebarView: (view: "explorer" | "search" | "problems" | "symbols") => void;
     openSidebar: () => void;
     toggleSidebar: () => void;
     toggleAIPanel: () => void;

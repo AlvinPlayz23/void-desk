@@ -9,6 +9,15 @@ interface EditorState {
 
     // View state
     scrollTop: number;
+    pendingNavigation:
+        | {
+              path: string;
+              line: number;
+              column: number;
+              endLine?: number;
+              endColumn?: number;
+          }
+        | null;
 
     // Actions
     setCursor: (line: number, column: number) => void;
@@ -17,6 +26,15 @@ interface EditorState {
         end: { line: number; column: number } | null
     ) => void;
     setScrollTop: (top: number) => void;
+    navigateTo: (
+        target: {
+            path: string;
+            line: number;
+            column: number;
+            endLine?: number;
+            endColumn?: number;
+        } | null
+    ) => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -25,10 +43,12 @@ export const useEditorStore = create<EditorState>((set) => ({
     selectionStart: null,
     selectionEnd: null,
     scrollTop: 0,
+    pendingNavigation: null,
 
     setCursor: (line, column) => set({ cursorLine: line, cursorColumn: column }),
 
     setSelection: (start, end) => set({ selectionStart: start, selectionEnd: end }),
 
     setScrollTop: (top) => set({ scrollTop: top }),
+    navigateTo: (target) => set({ pendingNavigation: target }),
 }));

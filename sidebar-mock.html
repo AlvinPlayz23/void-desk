@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiDesk — Sidebar + Search</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg-abyss:     #050508;
+    --bg-base:      #0a0a0f;
+    --bg-surface:   #0d0d14;
+    --bg-elevated:  #11111a;
+    --bg-hover:     #1a1a26;
+    --bg-active:    #252533;
+
+    --border-dim:   rgba(255,255,255,0.06);
+    --border-mid:   rgba(255,255,255,0.10);
+    --border-high:  rgba(255,255,255,0.15);
+
+    --text-primary: #e0e0eb;
+    --text-secondary: #8585a3;
+    --text-muted:   #5c5c73;
+    --text-ghost:   #3a3a4d;
+    --text-dim:     #b3b3cc;
+
+    --accent:       #6366f1;
+    --accent-glow:  rgba(99,102,241,0.15);
+    --accent-soft:  rgba(99,102,241,0.10);
+    --accent-hover: #8b5cf6;
+
+    --success:      #10b981;
+
+    --font-display: 'Syne', sans-serif;
+    --font-body:    'Outfit', sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background: var(--bg-abyss);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Icons */
+  .ico { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .ico svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .ico-sm svg { width: 14px; height: 14px; }
+  .ico-xs svg { width: 12px; height: 12px; }
+  .ico-lg svg { width: 22px; height: 22px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--text-ghost); border-radius: 10px; }
+
+  /* ===== LAYOUT ===== */
+  .shell { display: flex; flex-direction: column; height: 100vh; animation: fadeIn 0.4s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ===== TOP BAR ===== */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 46px;
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border-dim);
+    flex-shrink: 0;
+    animation: slideDown 0.4s ease;
+  }
+  @keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .search-pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 22px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-high);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.25s;
+    overflow: hidden;
+    position: relative;
+  }
+  .search-pill:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow), 0 4px 24px rgba(0,0,0,0.4);
+    transform: scale(1.03);
+  }
+  .search-pill .pill-icon { color: var(--text-ghost); transition: color 0.2s; }
+  .search-pill:hover .pill-icon { color: var(--text-muted); }
+  .search-pill .pill-text { font-size: 12px; color: var(--text-ghost); transition: color 0.2s; }
+  .search-pill:hover .pill-text { color: var(--text-secondary); }
+  .search-pill kbd {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-hover);
+    color: var(--text-ghost);
+    font-family: var(--font-mono);
+    border: 1px solid var(--border-dim);
+    margin-left: 6px;
+  }
+  .search-pill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 40%; height: 100%;
+    background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.07) 50%, transparent 70%);
+    transform: translateX(-120%) skewX(-15deg);
+    pointer-events: none;
+  }
+  .search-pill:hover::after { animation: shine 0.6s ease forwards; }
+  @keyframes shine { to { transform: translateX(320%) skewX(-15deg); } }
+
+  /* ===== MAIN ===== */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ===== ACTIVITY BAR ===== */
+  .activity-bar {
+    width: 48px;
+    background: var(--bg-base);
+    border-right: 1px solid var(--border-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0;
+    gap: 4px;
+    flex-shrink: 0;
+    animation: slideRight 0.4s ease 0.1s both;
+  }
+  @keyframes slideRight { from { transform: translateX(-100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  .activity-btn {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    color: var(--text-ghost);
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+    background: transparent;
+    border: none;
+  }
+  .activity-btn:hover { color: var(--text-muted); background: var(--bg-hover); }
+  .activity-btn.active { color: var(--text-primary); background: var(--bg-hover); }
+  .activity-btn.active::before {
+    content: '';
+    position: absolute; left: -6px; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 20px;
+    background: var(--accent);
+    border-radius: 0 3px 3px 0;
+  }
+  .activity-btn .badge {
+    position: absolute; top: 3px; right: 2px;
+    min-width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-body);
+  }
+  .activity-spacer { flex: 1; }
+  .activity-divider { width: 22px; height: 1px; background: var(--border-mid); margin: 6px 0; }
+
+  /* ===== SIDEBAR ===== */
+  .sidebar {
+    width: 260px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-dim);
+    display: flex; flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+    animation: slideRight 0.5s ease 0.15s both;
+  }
+
+  .sidebar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-dim);
+    flex-shrink: 0;
+  }
+  .sidebar-title {
+    font-family: var(--font-display);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-ghost);
+  }
+
+  .sidebar-actions { display: flex; gap: 2px; }
+  .sidebar-action {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 5px;
+    color: var(--text-ghost);
+    cursor: pointer;
+    transition: all 0.15s;
+    background: transparent; border: none;
+  }
+  .sidebar-action:hover { color: var(--text-secondary); background: var(--bg-hover); }
+
+  .sidebar-search {
+    margin: 8px 10px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-base);
+    border: 1px solid var(--border-mid);
+    border-radius: 6px;
+    transition: all 0.25s;
+  }
+  .sidebar-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+  .sidebar-search input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--text-primary); font-size: 12px; font-family: var(--font-body);
+  }
+  .sidebar-search input::placeholder { color: var(--text-ghost); }
+
+  /* ===== SECTIONS ===== */
+  .section-header {
+    display: flex; align-items: center;
+    padding: 10px 14px 4px;
+    cursor: pointer; user-select: none;
+  }
+  .section-header:hover .section-label { color: var(--text-primary); }
+  .section-label {
+    font-family: var(--font-display);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-ghost);
+    transition: color 0.15s;
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  /* ===== FILE TREE ===== */
+  .file-tree { flex: 1; overflow-y: auto; padding: 2px 6px; }
+
+  .tree-item {
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.12s;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    user-select: none;
+    position: relative;
+  }
+  .tree-item:hover { background: var(--bg-hover); color: var(--text-dim); }
+  .tree-item.active {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .tree-item.active::before {
+    content: '';
+    position: absolute; left: 0; top: 4px; bottom: 4px;
+    width: 2.5px; border-radius: 0 3px 3px 0;
+    background: var(--accent);
+  }
+  .tree-item .icon { flex-shrink: 0; opacity: 0.5; }
+  .tree-item:hover .icon { opacity: 0.7; }
+  .tree-item.dir { font-weight: 500; color: var(--text-secondary); }
+  .tree-item.indent-1 { padding-left: 26px; }
+  .tree-item.indent-2 { padding-left: 44px; }
+  .tree-item.indent-3 { padding-left: 60px; }
+
+  /* Indent guides */
+  .tree-item.indent-1::after,
+  .tree-item.indent-2::after { content: ''; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border-dim); }
+  .tree-item.indent-1::after { left: 20px; }
+  .tree-item.indent-2::after { left: 38px; }
+
+  .file-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .dot-tsx  { background: #3178c6; }
+  .dot-rs   { background: #dea584; }
+  .dot-css  { background: #42a5f5; }
+  .dot-json { background: #cbcb41; }
+  .dot-md   { background: #519aba; }
+  .dot-html { background: #e34c26; }
+  .dot-lock { background: #7a7a96; }
+  .dot-git  { background: #f05032; }
+
+  .sidebar-footer {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border-dim);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .sidebar-footer span { font-size: 10px; color: var(--text-ghost); font-family: var(--font-mono); }
+  .project-name { display: flex; align-items: center; gap: 6px; }
+  .project-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+
+  /* ===== CANVAS ===== */
+  .canvas {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    min-width: 0; position: relative; overflow: hidden;
+  }
+  .canvas::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .canvas-hint {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    opacity: 0.3;
+  }
+  .canvas-hint span {
+    font-family: var(--font-display);
+    font-size: 14px; letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ===== PANELS (hidden by default, shown via JS) ===== */
+  .sidebar-panel { display: none; flex-direction: column; height: 100%; }
+  .sidebar-panel.visible { display: flex; }
+
+  /* ===== SEARCH PANEL ===== */
+  .search-input-box {
+    margin: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .search-field {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-base);
+    border: 1px solid var(--border-mid);
+    border-radius: 6px;
+    transition: all 0.25s;
+  }
+  .search-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+  .search-field input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--text-primary); font-size: 12px; font-family: var(--font-body);
+  }
+  .search-field input::placeholder { color: var(--text-muted); }
+
+  .search-options {
+    display: flex; gap: 4px; padding: 0 2px;
+  }
+  .search-opt {
+    padding: 3px 8px; border-radius: 4px;
+    font-size: 10px; color: var(--text-muted);
+    background: transparent; border: 1px solid var(--border-dim);
+    cursor: pointer; transition: all 0.15s;
+    font-family: var(--font-mono);
+  }
+  .search-opt:hover { color: var(--text-secondary); border-color: var(--border-mid); }
+  .search-opt.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+  .search-results { flex: 1; overflow-y: auto; padding: 4px 6px; }
+  .search-result-file {
+    padding: 6px 10px;
+    font-size: 12px; font-weight: 500;
+    color: var(--text-primary);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .search-result-line {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 10px 3px 28px;
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer; border-radius: 4px;
+    transition: background 0.1s;
+  }
+  .search-result-line:hover { background: var(--bg-hover); }
+  .search-result-line .line-num { color: var(--text-ghost); font-size: 10px; min-width: 24px; }
+  .search-result-line .match { color: var(--accent); font-weight: 500; }
+
+  .search-summary {
+    padding: 8px 12px; border-top: 1px solid var(--border-dim);
+    font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+
+  /* ===== GIT PANEL ===== */
+  .git-input-row {
+    margin: 10px;
+    display: flex; gap: 6px;
+  }
+  .git-commit-input {
+    flex: 1; padding: 8px 10px;
+    background: var(--bg-base); border: 1px solid var(--border-mid);
+    border-radius: 6px; color: var(--text-primary);
+    font-size: 12px; font-family: var(--font-body);
+    outline: none; transition: border-color 0.2s;
+  }
+  .git-commit-input:focus { border-color: var(--accent); }
+  .git-commit-input::placeholder { color: var(--text-ghost); }
+  .git-commit-btn {
+    padding: 0 14px; border-radius: 6px;
+    background: var(--accent); color: #fff; border: none;
+    font-size: 11px; font-weight: 600; font-family: var(--font-body);
+    cursor: pointer; transition: background 0.15s;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .git-commit-btn:hover { background: var(--accent-hover); }
+
+  .git-files { flex: 1; overflow-y: auto; padding: 4px 6px; }
+  .git-file {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; border-radius: 5px;
+    font-size: 12.5px; color: var(--text-secondary);
+    cursor: pointer; transition: all 0.12s;
+  }
+  .git-file:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .git-file .git-status {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    min-width: 14px; text-align: center;
+  }
+  .git-status.modified { color: #f59e0b; }
+  .git-status.added { color: var(--success); }
+  .git-status.deleted { color: #f87171; }
+  .git-file .git-path { flex: 1; }
+  .git-file .git-dir { font-size: 10px; color: var(--text-ghost); margin-left: auto; }
+
+  .git-footer {
+    padding: 8px 12px; border-top: 1px solid var(--border-dim);
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+
+  /* ===== ACCOUNT PANEL ===== */
+  .account-card {
+    margin: 14px 10px;
+    padding: 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-dim);
+    border-radius: 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .account-avatar {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-display); font-size: 18px; font-weight: 700; color: #fff;
+  }
+  .account-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .account-email { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+
+  .account-menu { padding: 4px 10px; }
+  .account-menu-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 6px;
+    font-size: 12.5px; color: var(--text-secondary);
+    cursor: pointer; transition: all 0.12s; border: none;
+    background: transparent; width: 100%; text-align: left;
+    font-family: var(--font-body);
+  }
+  .account-menu-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .account-menu-item .menu-hint {
+    margin-left: auto; font-size: 10px; color: var(--text-ghost);
+    font-family: var(--font-mono);
+  }
+
+  /* Noise overlay */
+  .noise-overlay {
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.02; pointer-events: none; z-index: 9999; mix-blend-mode: overlay;
+  }
+</style>
+</head>
+<body>
+
+<div class="noise-overlay"></div>
+
+<div class="shell">
+
+  <!-- Top bar with search -->
+  <div class="topbar">
+    <div class="search-pill">
+      <span class="ico ico-sm pill-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+      <span class="pill-text">Search anything…</span>
+      <kbd>Ctrl+P</kbd>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- Activity Bar -->
+    <div class="activity-bar">
+      <button class="activity-btn active" data-panel="explorer" title="Explorer">
+        <span class="ico"><svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13h4"/><path d="M10 17h4"/></svg></span>
+      </button>
+      <button class="activity-btn" data-panel="search" title="Search">
+        <span class="ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+      </button>
+      <button class="activity-btn" data-panel="git" title="Source Control">
+        <span class="ico"><svg viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+        <span class="badge">3</span>
+      </button>
+      <div class="activity-spacer"></div>
+
+      <button class="activity-btn" data-panel="account" title="Account">
+        <span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg></span>
+      </button>
+      <button class="activity-btn" title="Settings">
+        <span class="ico"><svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+      </button>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+      <!-- ========== EXPLORER PANEL ========== -->
+      <div class="sidebar-panel visible" id="panel-explorer">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Explorer</span>
+          <div class="sidebar-actions">
+            <button class="sidebar-action" title="New File">
+              <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg></span>
+            </button>
+            <button class="sidebar-action" title="New Folder">
+              <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>
+            </button>
+            <button class="sidebar-action" title="Refresh">
+              <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-search">
+          <span class="ico ico-sm" style="color:var(--text-muted)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+          <input type="text" placeholder="Filter files…">
+        </div>
+
+        <div class="file-tree">
+          <div class="section-header">
+            <span class="section-label">
+              <span class="ico ico-xs"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+              Open Editors
+            </span>
+          </div>
+          <div class="tree-item indent-1 active"><div class="file-dot dot-tsx"></div> MainLayout.tsx</div>
+          <div class="tree-item indent-1"><div class="file-dot dot-tsx"></div> AIChat.tsx</div>
+
+          <div class="section-header" style="margin-top:8px">
+            <span class="section-label">
+              <span class="ico ico-xs"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+              void-desk
+            </span>
+          </div>
+
+          <div class="tree-item dir indent-1">
+            <span class="ico ico-xs icon"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+            <span class="ico ico-sm icon" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+            src
+          </div>
+          <div class="tree-item dir indent-2">
+            <span class="ico ico-xs icon"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+            <span class="ico ico-sm icon" style="color:#64748b"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+            components
+          </div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> MainLayout.tsx</div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> Sidebar.tsx</div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> StatusBar.tsx</div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> AIChat.tsx</div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> CodeEditor.tsx</div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> EditorTabs.tsx</div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> FileTree.tsx</div>
+          <div class="tree-item indent-3"><div class="file-dot dot-tsx"></div> FileItem.tsx</div>
+          <div class="tree-item dir indent-2">
+            <span class="ico ico-xs icon"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+            <span class="ico ico-sm icon" style="color:#64748b"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>
+            hooks
+          </div>
+          <div class="tree-item dir indent-2">
+            <span class="ico ico-xs icon"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+            <span class="ico ico-sm icon" style="color:#64748b"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>
+            stores
+          </div>
+          <div class="tree-item dir indent-2">
+            <span class="ico ico-xs icon"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+            <span class="ico ico-sm icon" style="color:#64748b"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>
+            utils
+          </div>
+          <div class="tree-item indent-2"><div class="file-dot dot-tsx"></div> App.tsx</div>
+          <div class="tree-item indent-2"><div class="file-dot dot-css"></div> index.css</div>
+          <div class="tree-item indent-2"><div class="file-dot dot-tsx"></div> main.tsx</div>
+          <div class="tree-item dir indent-1">
+            <span class="ico ico-xs icon"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+            <span class="ico ico-sm icon" style="color:#64748b"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>
+            src-tauri
+          </div>
+          <div class="tree-item indent-1"><div class="file-dot dot-git"></div> .gitignore</div>
+          <div class="tree-item indent-1"><div class="file-dot dot-html"></div> index.html</div>
+          <div class="tree-item indent-1"><div class="file-dot dot-json"></div> package.json</div>
+          <div class="tree-item indent-1"><div class="file-dot dot-lock"></div> pnpm-lock.yaml</div>
+          <div class="tree-item indent-1"><div class="file-dot dot-json"></div> tsconfig.json</div>
+          <div class="tree-item indent-1"><div class="file-dot dot-md"></div> README.md</div>
+        </div>
+
+        <div class="sidebar-footer">
+          <span class="project-name"><span class="project-dot"></span> void-desk</span>
+          <span>24 files</span>
+        </div>
+      </div>
+
+      <!-- ========== SEARCH PANEL ========== -->
+      <div class="sidebar-panel" id="panel-search">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Search</span>
+        </div>
+        <div class="search-input-box">
+          <div class="search-field">
+            <span class="ico ico-sm" style="color:var(--text-muted)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+            <input type="text" placeholder="Search in files…" value="useCallback">
+          </div>
+          <div class="search-field">
+            <span class="ico ico-sm" style="color:var(--text-muted)"><svg viewBox="0 0 24 24"><path d="M17 3v10"/><path d="m12.67 5.5 8.66 5"/><path d="m12.67 10.5 8.66-5"/><path d="M9 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2Z"/></svg></span>
+            <input type="text" placeholder="Replace…">
+          </div>
+          <div class="search-options">
+            <button class="search-opt on">Aa</button>
+            <button class="search-opt">.*</button>
+            <button class="search-opt">"&thinsp;"</button>
+          </div>
+        </div>
+        <div class="search-results">
+          <div class="search-result-file">
+            <div class="file-dot dot-tsx"></div> MainLayout.tsx
+          </div>
+          <div class="search-result-line">
+            <span class="line-num">23</span>
+            <span>const handleResize = <span class="match">useCallback</span>(</span>
+          </div>
+          <div class="search-result-line">
+            <span class="line-num">58</span>
+            <span>const handleAI = <span class="match">useCallback</span>(</span>
+          </div>
+          <div class="search-result-line">
+            <span class="line-num">84</span>
+            <span>const handleTerm = <span class="match">useCallback</span>(</span>
+          </div>
+          <div class="search-result-file" style="margin-top:6px">
+            <div class="file-dot dot-tsx"></div> CodeEditor.tsx
+          </div>
+          <div class="search-result-line">
+            <span class="line-num">142</span>
+            <span>const save = <span class="match">useCallback</span>(async () =&gt; {</span>
+          </div>
+          <div class="search-result-file" style="margin-top:6px">
+            <div class="file-dot dot-tsx"></div> FileTree.tsx
+          </div>
+          <div class="search-result-line">
+            <span class="line-num">31</span>
+            <span>const toggle = <span class="match">useCallback</span>((path) =&gt; {</span>
+          </div>
+          <div class="search-result-line">
+            <span class="line-num">67</span>
+            <span>const onDrop = <span class="match">useCallback</span>((e) =&gt; {</span>
+          </div>
+        </div>
+        <div class="search-summary">6 results in 3 files</div>
+      </div>
+
+      <!-- ========== GIT PANEL ========== -->
+      <div class="sidebar-panel" id="panel-git">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Source Control</span>
+          <div class="sidebar-actions">
+            <button class="sidebar-action" title="Refresh">
+              <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></span>
+            </button>
+          </div>
+        </div>
+        <div class="git-input-row">
+          <input class="git-commit-input" type="text" placeholder="Commit message…">
+          <button class="git-commit-btn">
+            <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg></span>
+            Commit
+          </button>
+        </div>
+        <div class="section-header">
+          <span class="section-label">
+            <span class="ico ico-xs"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+            Staged Changes
+          </span>
+        </div>
+        <div class="git-files">
+          <div class="git-file">
+            <span class="git-status added">A</span>
+            <span class="git-path">SearchPanel.tsx</span>
+            <span class="git-dir">components/</span>
+          </div>
+        </div>
+        <div class="section-header" style="margin-top:4px">
+          <span class="section-label">
+            <span class="ico ico-xs"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+            Changes
+          </span>
+        </div>
+        <div class="git-files">
+          <div class="git-file">
+            <span class="git-status modified">M</span>
+            <span class="git-path">MainLayout.tsx</span>
+            <span class="git-dir">components/</span>
+          </div>
+          <div class="git-file">
+            <span class="git-status modified">M</span>
+            <span class="git-path">index.css</span>
+            <span class="git-dir">src/</span>
+          </div>
+          <div class="git-file">
+            <span class="git-status deleted">D</span>
+            <span class="git-path">old-utils.ts</span>
+            <span class="git-dir">utils/</span>
+          </div>
+        </div>
+        <div class="git-footer">
+          <span class="ico ico-xs"><svg viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+          main · 3 changed · 1 staged
+        </div>
+      </div>
+
+      <!-- ========== ACCOUNT PANEL ========== -->
+      <div class="sidebar-panel" id="panel-account">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Account</span>
+        </div>
+        <div class="account-card">
+          <div class="account-avatar">VD</div>
+          <span class="account-name">VoiDesk User</span>
+          <span class="account-email">user@voiddesk.dev</span>
+        </div>
+        <div class="account-menu">
+          <button class="account-menu-item">
+            <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+            Profile
+            <span class="menu-hint">→</span>
+          </button>
+          <button class="account-menu-item">
+            <span class="ico ico-sm"><svg viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            License &amp; Plan
+            <span class="menu-hint">Free</span>
+          </button>
+          <button class="account-menu-item">
+            <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+            Preferences
+            <span class="menu-hint">→</span>
+          </button>
+          <button class="account-menu-item">
+            <span class="ico ico-sm"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg></span>
+            Sign Out
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Blank canvas -->
+    <div class="canvas">
+      <div class="canvas-hint">
+        <span class="ico ico-lg" style="color:var(--text-muted)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <span>Select a file to begin</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Panel switching via activity bar
+  document.querySelectorAll('.activity-btn[data-panel]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var panelId = btn.getAttribute('data-panel');
+
+      // Update active button
+      document.querySelectorAll('.activity-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+
+      // Switch panel
+      document.querySelectorAll('.sidebar-panel').forEach(function(p) { p.classList.remove('visible'); });
+      var panel = document.getElementById('panel-' + panelId);
+      if (panel) panel.classList.add('visible');
+    });
+  });
+
+  // Settings button (no panel, just highlight)
+  document.querySelectorAll('.activity-btn:not([data-panel])').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      // Settings doesn't switch panels
+    });
+  });
+
+  // File tree clicks
+  document.querySelectorAll('.tree-item:not(.dir)').forEach(function(item) {
+    item.addEventListener('click', function() {
+      document.querySelectorAll('.tree-item').forEach(function(i) { i.classList.remove('active'); });
+      item.classList.add('active');
+    });
+  });
+
+  // Search option toggles
+  document.querySelectorAll('.search-opt').forEach(function(opt) {
+    opt.addEventListener('click', function() { opt.classList.toggle('on'); });
+  });
+</script>
+
+</body>
+</html>

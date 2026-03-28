@@ -226,3 +226,6 @@ Box drawing characters:
 | [2025-01-24](./2025-01-24.md) | LSP Autocomplete/Hover Fix, Windows URI Formatting, Request Routing, Server Request Handling |
 | [2025-01-27](./2025-01-27.md) | Drag & Drop Fix (Tauri dragDropEnabled), Root Drop Zone |
 | [2026-03-13](./2026-03-13.md) | Image Attachment Timeout Fix, Non-Streaming Multimodal Fallback, Transport Diagnostics |
+| [2026-03-25](./2026-03-25.md) | ChatGPT OAuth Codex Provider, Codex Protocol Compatibility Fixes, Provider-Specific Model Defaults |
+| [2026-03-28](./2026-03-28.md) | Workspace Index, Persistent Cache, Ripgrep Search, Explorer Fixes |
+| [2026-03-28-2](./2026-03-28-2.md) | LSP Diagnostics, Definition/References/Rename, Managed LSP Runtime, Startup Auto-Install, Activity Bar |

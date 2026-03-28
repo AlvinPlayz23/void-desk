@@ -1,5 +1,5 @@
-import { useEffect, useRef, useMemo } from "react";
-import { EditorState, Extension } from "@codemirror/state";
+import { useEffect, useRef, useMemo, useCallback } from "react";
+import { EditorSelection, EditorState, Extension } from "@codemirror/state";
 import {
     EditorView,
     keymap,
@@ -52,6 +52,12 @@ import { useUIStore } from "@/stores/uiStore";
 import { useLsp } from "@/hooks/useLsp";
 import { useInlineCompletion } from "@/hooks/useInlineCompletion";
 import { ghostTextExtension, createGhostTextKeymap, setGhostText, clearGhostText, GhostTextCallbacks } from "./ghostText";
+import { diagnosticsExtension, flashLineEffect, setDiagnosticsEffect } from "./diagnosticsExtension";
+import { useDiagnosticsStore } from "@/stores/diagnosticsStore";
+import { useNavigationStore } from "@/stores/navigationStore";
+import { useFileSystem } from "@/hooks/useFileSystem";
+import { normalizePath, pathsEqual } from "@/utils/path";
+import { useLspExtensionsStore } from "@/stores/lspExtensionsStore";
 import { FileCode, Loader2 } from "lucide-react";
 
 /**
@@ -177,7 +183,13 @@ export function CodeEditor() {
             updateFileContent: state.updateFileContent,
         }))
     );
-    const setCursor = useEditorStore((state) => state.setCursor);
+    const { setCursor, pendingNavigation, navigateTo } = useEditorStore(
+        useShallow((state) => ({
+            setCursor: state.setCursor,
+            pendingNavigation: state.pendingNavigation,
+            navigateTo: state.navigateTo,
+        }))
+    );
     const { editorFontSize, editorFontFamily, tabSize, wordWrap, lineNumbers: showLineNumbers, minimap } = useSettingsStore(
         useShallow((state) => ({
             editorFontSize: state.editorFontSize,
@@ -188,11 +200,37 @@ export function CodeEditor() {
             minimap: state.minimap,
         }))
     );
-    const appTheme = useUIStore((state) => state.theme);
-    const { didOpen, didChange, getCompletions, getHover } = useLsp();
+    const { appTheme, openSettingsPage } = useUIStore(
+        useShallow((state) => ({
+            appTheme: state.theme,
+            openSettingsPage: state.openSettingsPage,
+        }))
+    );
+    const { didOpen, didChange, getCompletions, getHover, getDefinition, getReferences, renameSymbol } = useLsp();
     const { completion, isLoading, requestCompletion, clearCompletion, acceptAll, acceptWord, hasCompletion } = useInlineCompletion();
+    const diagnosticsByPath = useDiagnosticsStore((state) => state.diagnosticsByPath);
+    const { setSymbolResults, clearSymbolResults } = useNavigationStore(
+        useShallow((state) => ({
+            setSymbolResults: state.setSymbolResults,
+            clearSymbolResults: state.clearSymbolResults,
+        }))
+    );
+    const { readFile, openFileAtLocation, reloadOpenFile } = useFileSystem();
+    const extensions = useLspExtensionsStore((state) => state.extensions);
+    const dismissedPromptIds = useLspExtensionsStore((state) => state.dismissedPromptIds);
+    const dismissPrompt = useLspExtensionsStore((state) => state.dismissPrompt);
 
-    const currentFile = openFiles.find((f) => f.path === currentFilePath);
+    const currentFile = openFiles.find((f) => pathsEqual(f.path, currentFilePath));
+    const diagnostics = currentFile ? diagnosticsByPath[normalizePath(currentFile.path)] || [] : [];
+    const currentExtension = currentFile?.path.split(".").pop()?.toLowerCase() || "";
+    const missingExtension = currentExtension
+        ? extensions.find(
+              (extension) =>
+                  extension.file_extensions.includes(currentExtension) &&
+                  !extension.installed &&
+                  !dismissedPromptIds.includes(extension.id)
+          ) || null
+        : null;
 
     // Use a ref for callbacks so the keymap always has access to current functions
     const ghostTextCallbacksRef = useRef<GhostTextCallbacks>({
@@ -200,6 +238,11 @@ export function CodeEditor() {
         onAcceptWord: () => null,
         onDismiss: () => {},
         hasCompletion: () => false,
+    });
+    const lspCommandHandlersRef = useRef({
+        goToDefinition: () => Promise.resolve(true),
+        findReferences: () => Promise.resolve(true),
+        renameSymbol: () => Promise.resolve(true),
     });
 
     // Keep the ref updated with current functions
@@ -228,6 +271,152 @@ export function CodeEditor() {
             }, 300);
         };
     }, [didChange]);
+
+    const getCursorLspPosition = useCallback(() => {
+        const view = viewRef.current;
+        if (!view || !currentFile?.path) {
+            return null;
+        }
+
+        const pos = view.state.selection.main.head;
+        const line = view.state.doc.lineAt(pos);
+        return {
+            line: line.number - 1,
+            character: pos - line.from,
+        };
+    }, [currentFile?.path]);
+
+    const buildSymbolResults = useCallback(
+        async (
+            locations: {
+                path: string;
+                range: {
+                    start: { line: number; character: number };
+                    end: { line: number; character: number };
+                };
+            }[]
+        ) => {
+            const fileCache = new Map<string, string>();
+
+            return Promise.all(
+                locations.map(async (location) => {
+                    let content = fileCache.get(location.path);
+                    if (content === undefined) {
+                        content = (await readFile(location.path)) || "";
+                        fileCache.set(location.path, content);
+                    }
+
+                    const lines = content.split(/\r?\n/);
+                    const lineText = lines[location.range.start.line] || "";
+                    return {
+                        ...location,
+                        lineText,
+                        preview: lineText.trim(),
+                    };
+                })
+            );
+        },
+        [readFile]
+    );
+
+    const openLocationsPanel = useCallback(
+        async (
+            mode: "definition" | "references",
+            locations: { path: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }[]
+        ) => {
+            const results = await buildSymbolResults(locations);
+            setSymbolResults(mode, results);
+            useUIStore.getState().openSidebar();
+            useUIStore.getState().setSidebarView("symbols");
+        },
+        [buildSymbolResults, setSymbolResults]
+    );
+
+    const handleGoToDefinition = useCallback(async () => {
+        if (!currentFile?.path) return true;
+
+        const position = getCursorLspPosition();
+        if (!position) return true;
+
+        const locations = await getDefinition(currentFile.path, position.line, position.character);
+        if (locations.length === 0) {
+            return true;
+        }
+
+        if (locations.length === 1) {
+            const location = locations[0];
+            const name = location.path.split(/[\\/]/).pop() || location.path;
+            await openFileAtLocation(
+                location.path,
+                name,
+                location.range.start.line + 1,
+                location.range.start.character + 1,
+                location.range.end.line + 1,
+                location.range.end.character + 1
+            );
+            clearSymbolResults();
+            return true;
+        }
+
+        await openLocationsPanel("definition", locations);
+        return true;
+    }, [clearSymbolResults, currentFile?.path, getCursorLspPosition, getDefinition, openFileAtLocation, openLocationsPanel]);
+
+    const handleFindReferences = useCallback(async () => {
+        if (!currentFile?.path) return true;
+
+        const position = getCursorLspPosition();
+        if (!position) return true;
+
+        const locations = await getReferences(currentFile.path, position.line, position.character);
+        await openLocationsPanel("references", locations);
+        return true;
+    }, [currentFile?.path, getCursorLspPosition, getReferences, openLocationsPanel]);
+
+    const handleRenameSymbol = useCallback(async () => {
+        if (!currentFile?.path) return true;
+
+        const dirtyFiles = openFiles.filter((file) => file.isDirty);
+        if (dirtyFiles.length > 0) {
+            window.alert("Save all open files before renaming a symbol.");
+            return true;
+        }
+
+        const position = getCursorLspPosition();
+        if (!position) return true;
+
+        const newName = window.prompt("Rename symbol to:");
+        if (!newName?.trim()) {
+            return true;
+        }
+
+        const result = await renameSymbol(
+            currentFile.path,
+            position.line,
+            position.character,
+            newName.trim()
+        );
+
+        if (!result) {
+            return true;
+        }
+
+        await Promise.all(
+            result.files
+                .filter((path) => openFiles.some((file) => file.path === path))
+                .map((path) => reloadOpenFile(path))
+        );
+
+        return true;
+    }, [currentFile?.path, getCursorLspPosition, openFiles, reloadOpenFile, renameSymbol]);
+
+    useEffect(() => {
+        lspCommandHandlersRef.current = {
+            goToDefinition: handleGoToDefinition,
+            findReferences: handleFindReferences,
+            renameSymbol: handleRenameSymbol,
+        };
+    }, [handleFindReferences, handleGoToDefinition, handleRenameSymbol]);
 
     // Get the language extension based on file path
     const languageExtension = useMemo(() => {
@@ -368,6 +557,7 @@ export function CodeEditor() {
                     activateOnTyping: true,
                 }) : [],
                 lspHoverTooltip,
+                diagnosticsExtension(),
                 // Ghost text (inline AI completions)
                 ghostTextExtension(),
                 ghostTextKeymapExt,
@@ -407,6 +597,27 @@ export function CodeEditor() {
                     ...historyKeymap,
                     ...searchKeymap,
                     indentWithTab,
+                    {
+                        key: "F12",
+                        run: () => {
+                            void lspCommandHandlersRef.current.goToDefinition();
+                            return true;
+                        },
+                    },
+                    {
+                        key: "Shift-F12",
+                        run: () => {
+                            void lspCommandHandlersRef.current.findReferences();
+                            return true;
+                        },
+                    },
+                    {
+                        key: "F2",
+                        run: () => {
+                            void lspCommandHandlersRef.current.renameSymbol();
+                            return true;
+                        },
+                    },
                 ]),
                 updateListener,
                 EditorView.theme({
@@ -414,10 +625,21 @@ export function CodeEditor() {
                         height: "100%",
                         backgroundColor: "var(--editor-bg, var(--color-surface-base))",
                     },
+                    "&.cm-focused": {
+                        outline: "none",
+                    },
+                    ".cm-scroller": {
+                        backgroundColor: "var(--editor-bg, var(--color-surface-base))",
+                    },
                     ".cm-content": {
+                        backgroundColor: "transparent",
+                        caretColor: "var(--color-accent-primary)",
                         fontFamily: `'${editorFontFamily}', var(--font-mono)`,
                         fontSize: `${editorFontSize}px`,
                         padding: "8px 0",
+                    },
+                    ".cm-gutters": {
+                        backgroundColor: "var(--color-surface-elevated)",
                     },
                     ".cm-line": {
                         padding: "0 16px",
@@ -454,6 +676,53 @@ export function CodeEditor() {
         }
     }, [currentFile?.content]);
 
+    useEffect(() => {
+        if (!viewRef.current) return;
+
+        viewRef.current.dispatch({
+            effects: setDiagnosticsEffect.of(diagnostics),
+        });
+    }, [diagnostics]);
+
+    useEffect(() => {
+        if (!viewRef.current || !currentFile || !pendingNavigation || pendingNavigation.path !== currentFile.path) {
+            return;
+        }
+
+        const doc = viewRef.current.state.doc;
+        const startLine = Math.max(1, pendingNavigation.line);
+        const startLineInfo = doc.line(Math.min(startLine, doc.lines));
+        const anchor = Math.min(
+            startLineInfo.from + Math.max(0, pendingNavigation.column - 1),
+            startLineInfo.to
+        );
+
+        let head = anchor;
+        if (pendingNavigation.endLine && pendingNavigation.endColumn) {
+            const endLineInfo = doc.line(Math.min(Math.max(1, pendingNavigation.endLine), doc.lines));
+            head = Math.min(
+                endLineInfo.from + Math.max(0, pendingNavigation.endColumn - 1),
+                endLineInfo.to
+            );
+        }
+
+        viewRef.current.dispatch({
+            selection: EditorSelection.range(anchor, head),
+            effects: flashLineEffect.of(startLine),
+            scrollIntoView: true,
+        });
+        viewRef.current.focus();
+        navigateTo(null);
+
+        const timeout = window.setTimeout(() => {
+            viewRef.current?.dispatch({
+                effects: flashLineEffect.of(null),
+            });
+        }, 1400);
+
+        return () => window.clearTimeout(timeout);
+    }, [currentFile?.path, navigateTo, pendingNavigation]);
+
     // Update ghost text when completion changes
     useEffect(() => {
         if (!viewRef.current) return;
@@ -488,6 +757,31 @@ export function CodeEditor() {
 
     return (
         <div className="relative h-full w-full">
+            {missingExtension && (
+                <div className="absolute top-2 left-3 right-3 z-20 flex items-center gap-3 rounded-lg border border-[var(--color-border-default)] bg-[var(--color-surface-overlay)]/95 px-3 py-2 shadow-lg backdrop-blur">
+                    <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-[var(--color-text-primary)]">
+                            {missingExtension.name} is not installed
+                        </div>
+                        <div className="text-[11px] text-[var(--color-text-secondary)] truncate">
+                            Install this language server from Settings → Extensions to enable IDE features for
+                            .{currentExtension} files.
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => openSettingsPage("extensions")}
+                        className="px-2.5 py-1 text-[11px] rounded-md bg-[var(--color-accent-primary)] text-[var(--color-surface-base)]"
+                    >
+                        Open Extensions
+                    </button>
+                    <button
+                        onClick={() => dismissPrompt(missingExtension.id)}
+                        className="px-2 py-1 text-[11px] rounded-md border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]"
+                    >
+                        Dismiss
+                    </button>
+                </div>
+            )}
             <div
                 ref={editorRef}
                 className="h-full w-full overflow-hidden"

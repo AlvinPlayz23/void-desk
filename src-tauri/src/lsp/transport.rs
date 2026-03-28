@@ -61,6 +61,7 @@ impl LspTransport {
     pub async fn spawn(
         command: &str,
         args: &[&str],
+        notification_tx: Option<mpsc::UnboundedSender<Value>>,
     ) -> Result<(Self, tokio::task::JoinHandle<()>), String> {
         let mut cmd = if cfg!(windows) && !command.ends_with(".exe") {
             let mut c = std::process::Command::new("cmd");
@@ -92,7 +93,7 @@ impl LspTransport {
         // Spawn a background task to read all responses and route them
         let handle = tokio::task::spawn_blocking(move || {
             let reader = BufReader::new(stdout);
-            Self::read_loop(reader, pending_clone, writer_clone);
+            Self::read_loop(reader, pending_clone, writer_clone, notification_tx);
         });
 
         Ok((
@@ -110,6 +111,7 @@ impl LspTransport {
         mut reader: BufReader<ChildStdout>,
         pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
         writer: Arc<StdinWriter>,
+        notification_tx: Option<mpsc::UnboundedSender<Value>>,
     ) {
         loop {
             // Read Content-Length header
@@ -221,6 +223,9 @@ impl LspTransport {
                     // Notification from server (no id, has method)
                     if let Some(method) = json.get("method").and_then(|v| v.as_str()) {
                         eprintln!("[LSP Transport] Notification: {}", method);
+                        if let Some(tx) = &notification_tx {
+                            let _ = tx.send(json.clone());
+                        }
                     }
                 }
             }

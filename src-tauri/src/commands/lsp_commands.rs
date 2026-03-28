@@ -1,6 +1,7 @@
 // LSP Tauri Commands
 
 use crate::lsp::LspManager;
+use crate::lsp::manager::{LspDiagnostic, LspLocation, RenameResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -24,6 +25,11 @@ pub struct CompletionItem {
     pub kind: Option<String>,
     pub detail: Option<String>,
     pub insert_text: Option<String>,
+}
+
+#[tauri::command]
+pub async fn lsp_list_diagnostics(state: State<'_, LspState>) -> Result<Vec<LspDiagnostic>, String> {
+    Ok(state.manager.list_diagnostics().await)
 }
 
 #[tauri::command]
@@ -75,4 +81,47 @@ pub async fn lsp_did_change(
     language: String,
 ) -> Result<(), String> {
     state.manager.did_change(&language, &path, &content).await
+}
+
+#[tauri::command]
+pub async fn lsp_definition(
+    state: State<'_, LspState>,
+    path: String,
+    line: u32,
+    character: u32,
+    language: String,
+) -> Result<Vec<LspLocation>, String> {
+    state
+        .manager
+        .definition(&language, &path, line, character)
+        .await
+}
+
+#[tauri::command]
+pub async fn lsp_references(
+    state: State<'_, LspState>,
+    path: String,
+    line: u32,
+    character: u32,
+    language: String,
+) -> Result<Vec<LspLocation>, String> {
+    state
+        .manager
+        .references(&language, &path, line, character)
+        .await
+}
+
+#[tauri::command]
+pub async fn lsp_rename(
+    state: State<'_, LspState>,
+    path: String,
+    line: u32,
+    character: u32,
+    language: String,
+    new_name: String,
+) -> Result<RenameResult, String> {
+    state
+        .manager
+        .rename(&language, &path, line, character, &new_name)
+        .await
 }

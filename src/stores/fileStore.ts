@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { normalizePath, pathsEqual } from "@/utils/path";
 
 export interface FileNode {
     path: string;
@@ -63,6 +64,7 @@ interface FileState {
     closeFile: (path: string) => void;
     setCurrentFile: (path: string) => void;
     updateFileContent: (path: string, content: string) => void;
+    replaceFileContent: (path: string, content: string, isDirty?: boolean) => void;
     markFileSaved: (path: string) => void;
 
     // Multi-select actions
@@ -118,7 +120,7 @@ export const useFileStore = create<FileState>()(
 
             clearRecentProjects: () => set({ recentProjects: [] }),
 
-            setRootPath: (path) => set({ rootPath: path }),
+            setRootPath: (path) => set({ rootPath: normalizePath(path) }),
 
             setFileTree: (tree) => set({ fileTree: tree }),
 
@@ -139,26 +141,34 @@ export const useFileStore = create<FileState>()(
 
             openFile: (file) => {
                 const { openFiles } = get();
-                const exists = openFiles.find((f) => f.path === file.path);
+                const normalizedPath = normalizePath(file.path);
+                const exists = openFiles.find((f) => pathsEqual(f.path, normalizedPath));
 
                 if (!exists) {
                     set({
-                        openFiles: [...openFiles, file],
-                        currentFilePath: file.path,
+                        openFiles: [...openFiles, { ...file, path: normalizedPath }],
+                        currentFilePath: normalizedPath,
                     });
                 } else {
-                    set({ currentFilePath: file.path });
+                    set({
+                        openFiles: openFiles.map((existingFile) =>
+                            pathsEqual(existingFile.path, normalizedPath)
+                                ? { ...existingFile, ...file, path: existingFile.path }
+                                : existingFile
+                        ),
+                        currentFilePath: exists.path,
+                    });
                 }
                 get().saveSession();
             },
 
             closeFile: (path) => {
                 const { openFiles, currentFilePath } = get();
-                const newOpenFiles = openFiles.filter((f) => f.path !== path);
+                const newOpenFiles = openFiles.filter((f) => !pathsEqual(f.path, path));
 
                 let newCurrentPath = currentFilePath;
-                if (currentFilePath === path) {
-                    const idx = openFiles.findIndex((f) => f.path === path);
+                if (pathsEqual(currentFilePath, path)) {
+                    const idx = openFiles.findIndex((f) => pathsEqual(f.path, path));
                     newCurrentPath = newOpenFiles[Math.max(0, idx - 1)]?.path ?? null;
                 }
 
@@ -170,14 +180,24 @@ export const useFileStore = create<FileState>()(
             },
 
             setCurrentFile: (path) => {
-                set({ currentFilePath: path });
+                const existingPath =
+                    get().openFiles.find((file) => pathsEqual(file.path, path))?.path || normalizePath(path);
+                set({ currentFilePath: existingPath });
                 get().saveSession();
             },
 
             updateFileContent: (path, content) => {
                 set({
                     openFiles: get().openFiles.map((f) =>
-                        f.path === path ? { ...f, content, isDirty: true } : f
+                        pathsEqual(f.path, path) ? { ...f, content, isDirty: true } : f
+                    ),
+                });
+            },
+
+            replaceFileContent: (path, content, isDirty = false) => {
+                set({
+                    openFiles: get().openFiles.map((f) =>
+                        pathsEqual(f.path, path) ? { ...f, content, isDirty } : f
                     ),
                 });
             },
@@ -185,7 +205,7 @@ export const useFileStore = create<FileState>()(
             markFileSaved: (path) => {
                 set({
                     openFiles: get().openFiles.map((f) =>
-                        f.path === path ? { ...f, isDirty: false } : f
+                        pathsEqual(f.path, path) ? { ...f, isDirty: false } : f
                     ),
                 });
             },

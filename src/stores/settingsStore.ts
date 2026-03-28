@@ -28,6 +28,10 @@ export interface AIProviderPreset {
     selectedModelId: string;
 }
 
+export type LspInstallProvider = "pnpm" | "npm" | "bun";
+export type SidebarNavigationMode = "integrated" | "activity_bar";
+export type ActivityBarAlignment = "top" | "bottom";
+
 export interface ActiveAISettings {
     providerPresetsEnabled: boolean;
     providerType: AIProviderType;
@@ -107,6 +111,7 @@ interface SettingsState {
     inlineCompletionsEnabled: boolean;
     rawStreamLoggingEnabled: boolean;
     chatContextWindow: number;
+    persistentWorkspaceIndexEnabled: boolean;
 
     // Appearance Settings
     editorFontSize: number;
@@ -118,6 +123,9 @@ interface SettingsState {
     wordWrap: boolean;
     lineNumbers: boolean;
     minimap: boolean;
+    lspInstallProvider: LspInstallProvider;
+    sidebarNavigationMode: SidebarNavigationMode;
+    activityBarAlignment: ActivityBarAlignment;
 
     // Keybindings
     keybindings: KeyBinding[];
@@ -138,6 +146,7 @@ interface SettingsState {
     setInlineCompletionsEnabled: (enabled: boolean) => void;
     setRawStreamLoggingEnabled: (enabled: boolean) => void;
     setChatContextWindow: (tokens: number) => void;
+    setPersistentWorkspaceIndexEnabled: (enabled: boolean) => void;
 
     // Actions - Appearance
     setEditorFontSize: (size: number) => void;
@@ -149,6 +158,9 @@ interface SettingsState {
     setWordWrap: (enabled: boolean) => void;
     setLineNumbers: (enabled: boolean) => void;
     setMinimap: (enabled: boolean) => void;
+    setLspInstallProvider: (provider: LspInstallProvider) => void;
+    setSidebarNavigationMode: (mode: SidebarNavigationMode) => void;
+    setActivityBarAlignment: (alignment: ActivityBarAlignment) => void;
 
     // Actions - Keybindings
     updateKeybinding: (id: string, updates: Partial<KeyBinding>) => void;
@@ -272,6 +284,7 @@ const getDefaultState = () => ({
     inlineCompletionsEnabled: true,
     rawStreamLoggingEnabled: false,
     chatContextWindow: 32000,
+    persistentWorkspaceIndexEnabled: true,
     editorFontSize: 14,
     editorFontFamily: "JetBrains Mono",
     uiScale: 100,
@@ -279,6 +292,9 @@ const getDefaultState = () => ({
     wordWrap: false,
     lineNumbers: true,
     minimap: true,
+    lspInstallProvider: "pnpm" as LspInstallProvider,
+    sidebarNavigationMode: "integrated" as SidebarNavigationMode,
+    activityBarAlignment: "top" as ActivityBarAlignment,
     keybindings: [...DEFAULT_KEYBINDINGS],
 });
 
@@ -411,6 +427,7 @@ export const useSettingsStore = create<SettingsState>()(
             setInlineCompletionsEnabled: (enabled) => set({ inlineCompletionsEnabled: enabled }),
             setRawStreamLoggingEnabled: (enabled) => set({ rawStreamLoggingEnabled: enabled }),
             setChatContextWindow: (tokens) => set({ chatContextWindow: Math.max(1024, Math.min(256000, Math.round(tokens || 1024))) }),
+            setPersistentWorkspaceIndexEnabled: (enabled) => set({ persistentWorkspaceIndexEnabled: enabled }),
 
             // Actions - Appearance
             setEditorFontSize: (size) => set({ editorFontSize: Math.max(10, Math.min(32, size)) }),
@@ -422,6 +439,21 @@ export const useSettingsStore = create<SettingsState>()(
             setWordWrap: (enabled) => set({ wordWrap: enabled }),
             setLineNumbers: (enabled) => set({ lineNumbers: enabled }),
             setMinimap: (enabled) => set({ minimap: enabled }),
+            setLspInstallProvider: (provider) =>
+                set({
+                    lspInstallProvider:
+                        provider === "pnpm" || provider === "npm" || provider === "bun"
+                            ? provider
+                            : "pnpm",
+                }),
+            setSidebarNavigationMode: (mode) =>
+                set({
+                    sidebarNavigationMode: mode === "activity_bar" ? "activity_bar" : "integrated",
+                }),
+            setActivityBarAlignment: (alignment) =>
+                set({
+                    activityBarAlignment: alignment === "bottom" ? "bottom" : "top",
+                }),
 
             // Actions - Keybindings
             updateKeybinding: (id, updates) => set((state) => ({
@@ -452,7 +484,7 @@ export const useSettingsStore = create<SettingsState>()(
         }),
         {
             name: "voidesk-settings",
-            version: 4,
+            version: 6,
             migrate: (persistedState: any, version: number) => {
                 if (!persistedState) {
                     return getDefaultState();
@@ -472,6 +504,14 @@ export const useSettingsStore = create<SettingsState>()(
                 nextState.selectedModelId = nextState.aiModels.some((model: AIModelConfig) => model.id === nextState.selectedModelId)
                     ? nextState.selectedModelId
                     : nextState.aiModels[0]?.id || "";
+                nextState.lspInstallProvider =
+                    nextState.lspInstallProvider === "npm" || nextState.lspInstallProvider === "bun"
+                        ? nextState.lspInstallProvider
+                        : "pnpm";
+                nextState.sidebarNavigationMode =
+                    nextState.sidebarNavigationMode === "activity_bar" ? "activity_bar" : "integrated";
+                nextState.activityBarAlignment =
+                    nextState.activityBarAlignment === "bottom" ? "bottom" : "top";
 
                 if (version < 3) {
                     nextState.providerPresetsEnabled = false;

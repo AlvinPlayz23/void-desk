@@ -8,6 +8,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
+use super::workspace_index;
+
 // Global watcher state
 static WATCHER: std::sync::OnceLock<Mutex<Option<WatcherState>>> = std::sync::OnceLock::new();
 
@@ -33,6 +35,7 @@ pub async fn start_file_watcher(app: AppHandle, path: String) -> Result<(), Stri
     stop_file_watcher_internal()?;
 
     let watch_path = path.clone();
+    let index_root = watch_path.clone();
 
     // Create a channel for debouncing
     let (tx, mut rx) = mpsc::channel::<Event>(100);
@@ -45,8 +48,11 @@ pub async fn start_file_watcher(app: AppHandle, path: String) -> Result<(), Stri
 
         loop {
             tokio::select! {
-                Some(event) = rx.recv() => {
-                    pending_events.push(event);
+                event = rx.recv() => {
+                    match event {
+                        Some(event) => pending_events.push(event),
+                        None => break,
+                    }
                 }
                 _ = tokio::time::sleep(debounce_duration), if !pending_events.is_empty() => {
                     // Process accumulated events
@@ -71,6 +77,7 @@ pub async fn start_file_watcher(app: AppHandle, path: String) -> Result<(), Stri
                     }
 
                     if !paths.is_empty() {
+                        let _ = workspace_index::apply_file_changes(&index_root, &paths);
                         let _ = app_for_emit.emit("file-change", FileChangeEvent {
                             event_type,
                             paths,

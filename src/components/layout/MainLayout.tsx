@@ -10,7 +10,9 @@ import { AIChat } from "@/components/ai/AIChat";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { CommandPalette } from "@/components/ui/CommandPalette";
 import { SettingsPage } from "@/components/settings/SettingsPage";
+import { SidebarNav } from "./SidebarNav";
 import { MessageSquare, PanelLeftClose, PanelLeft, Terminal as TerminalIcon, X, Settings as SettingsIcon } from "lucide-react";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function MainLayout() {
     const {
@@ -50,6 +52,8 @@ export function MainLayout() {
             openFiles: state.openFiles,
         }))
     );
+    const sidebarNavigationMode = useSettingsStore((state) => state.sidebarNavigationMode);
+    const activityBarAlignment = useSettingsStore((state) => state.activityBarAlignment);
 
     const sidebarRef = useRef<HTMLDivElement>(null);
     const aiPanelRef = useRef<HTMLDivElement>(null);
@@ -140,6 +144,9 @@ export function MainLayout() {
                 {/* Sidebar */}
                 {isSidebarVisible && (
                     <>
+                        {sidebarNavigationMode === "activity_bar" && (
+                            <SidebarNav mode="activity_bar" alignment={activityBarAlignment} />
+                        )}
                         <div
                             ref={sidebarRef}
                             className="flex-shrink-0 bg-[var(--color-surface-elevated)] border-r border-[var(--color-border-subtle)]"

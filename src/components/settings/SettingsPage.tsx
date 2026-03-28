@@ -22,9 +22,13 @@ import {
     Save,
     Gem,
     Plus,
+    Database,
+    Trash2,
+    Download,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useUIStore, SettingsCategory, Theme } from "@/stores/uiStore";
+import { useFileStore } from "@/stores/fileStore";
 import {
     AIProviderPreset,
     AIProviderType,
@@ -33,7 +37,11 @@ import {
     modelsMatchProviderDefaults,
     useSettingsStore,
     KeyBinding,
+    LspInstallProvider,
+    SidebarNavigationMode,
+    ActivityBarAlignment,
 } from "@/stores/settingsStore";
+import { useLspExtensions } from "@/hooks/useLspExtensions";
 
 interface SettingsCategoryItem {
     id: SettingsCategory;
@@ -46,6 +54,7 @@ const CATEGORIES: SettingsCategoryItem[] = [
     { id: "ai", label: "AI Settings", icon: <Sparkles className="w-4 h-4" /> },
     { id: "keybindings", label: "Keybindings", icon: <Keyboard className="w-4 h-4" /> },
     { id: "editor", label: "Editor", icon: <Code2 className="w-4 h-4" /> },
+    { id: "extensions", label: "LSP Extensions", icon: <Download className="w-4 h-4" /> },
 ];
 
 const FONT_FAMILIES = [
@@ -65,6 +74,8 @@ interface PendingSettings {
     editorFontSize?: number;
     editorFontFamily?: string;
     uiScale?: number;
+    sidebarNavigationMode?: SidebarNavigationMode;
+    activityBarAlignment?: ActivityBarAlignment;
     // AI
     providerType?: AIProviderType;
     openAIKey?: string;
@@ -76,13 +87,38 @@ interface PendingSettings {
     selectedProviderPresetId?: string;
     inlineCompletionsEnabled?: boolean;
     chatContextWindow?: number;
+    persistentWorkspaceIndexEnabled?: boolean;
     // Editor
     tabSize?: number;
     wordWrap?: boolean;
     lineNumbers?: boolean;
     minimap?: boolean;
+    lspInstallProvider?: LspInstallProvider;
     // Keybindings
     keybindings?: KeyBinding[];
+}
+
+interface WorkspaceIndexStats {
+    root_path: string;
+    file_count: number;
+    directory_count: number;
+    ignored_rules: string[];
+    last_indexed_at: number;
+}
+
+interface WorkspaceIndexCacheSummary {
+    persistence_enabled: boolean;
+    workspace_count: number;
+    file_count: number;
+    directory_count: number;
+    total_size_bytes: number;
+    last_indexed_at: number | null;
+    cached_roots: WorkspaceIndexStats[];
+}
+
+interface ClearedWorkspaceIndexCache {
+    workspace_count: number;
+    entry_count: number;
 }
 
 export function SettingsPage() {
@@ -108,13 +144,17 @@ export function SettingsPage() {
             selectedProviderPresetId: state.selectedProviderPresetId,
             inlineCompletionsEnabled: state.inlineCompletionsEnabled,
             chatContextWindow: state.chatContextWindow,
+            persistentWorkspaceIndexEnabled: state.persistentWorkspaceIndexEnabled,
             editorFontSize: state.editorFontSize,
             editorFontFamily: state.editorFontFamily,
             uiScale: state.uiScale,
+            sidebarNavigationMode: state.sidebarNavigationMode,
+            activityBarAlignment: state.activityBarAlignment,
             tabSize: state.tabSize,
             wordWrap: state.wordWrap,
             lineNumbers: state.lineNumbers,
             minimap: state.minimap,
+            lspInstallProvider: state.lspInstallProvider,
             keybindings: state.keybindings,
             setProviderType: state.setProviderType,
             setOpenAIKey: state.setOpenAIKey,
@@ -126,6 +166,7 @@ export function SettingsPage() {
             setSelectedProviderPresetId: state.setSelectedProviderPresetId,
             setInlineCompletionsEnabled: state.setInlineCompletionsEnabled,
             setChatContextWindow: state.setChatContextWindow,
+            setPersistentWorkspaceIndexEnabled: state.setPersistentWorkspaceIndexEnabled,
             setEditorFontSize: state.setEditorFontSize,
             setEditorFontFamily: state.setEditorFontFamily,
             setUIScale: state.setUIScale,
@@ -133,13 +174,30 @@ export function SettingsPage() {
             setWordWrap: state.setWordWrap,
             setLineNumbers: state.setLineNumbers,
             setMinimap: state.setMinimap,
+            setSidebarNavigationMode: state.setSidebarNavigationMode,
+            setActivityBarAlignment: state.setActivityBarAlignment,
+            setLspInstallProvider: state.setLspInstallProvider,
             updateKeybinding: state.updateKeybinding,
         }))
     );
+    const {
+        extensions,
+        isLoading: isExtensionsLoading,
+        installInFlightIds,
+        installExtension,
+        updateExtension,
+        uninstallExtension,
+        refreshExtensions,
+    } = useLspExtensions();
+    const rootPath = useFileStore((state) => state.rootPath);
     const [searchQuery, setSearchQuery] = useState("");
     const [pending, setPending] = useState<PendingSettings>({});
     const [hasChanges, setHasChanges] = useState(false);
     const [showSaved, setShowSaved] = useState(false);
+    const [workspaceCacheSummary, setWorkspaceCacheSummary] = useState<WorkspaceIndexCacheSummary | null>(null);
+    const [workspaceCacheError, setWorkspaceCacheError] = useState<string | null>(null);
+    const [isWorkspaceCacheLoading, setIsWorkspaceCacheLoading] = useState(false);
+    const [isClearingWorkspaceCache, setIsClearingWorkspaceCache] = useState(false);
 
     // Reset pending changes when opening
     useEffect(() => {
@@ -147,6 +205,40 @@ export function SettingsPage() {
             setPending({});
             setHasChanges(false);
         }
+    }, [isSettingsPageOpen]);
+
+    useEffect(() => {
+        if (!isSettingsPageOpen) {
+            return;
+        }
+
+        let isActive = true;
+
+        const loadWorkspaceCacheSummary = async () => {
+            setIsWorkspaceCacheLoading(true);
+            setWorkspaceCacheError(null);
+
+            try {
+                const summary = await invoke<WorkspaceIndexCacheSummary>("get_workspace_index_cache_summary");
+                if (isActive) {
+                    setWorkspaceCacheSummary(summary);
+                }
+            } catch (error) {
+                if (isActive) {
+                    setWorkspaceCacheError(String(error));
+                }
+            } finally {
+                if (isActive) {
+                    setIsWorkspaceCacheLoading(false);
+                }
+            }
+        };
+
+        loadWorkspaceCacheSummary();
+
+        return () => {
+            isActive = false;
+        };
     }, [isSettingsPageOpen]);
 
     const updatePending = <K extends keyof PendingSettings>(key: K, value: PendingSettings[K]) => {
@@ -164,6 +256,8 @@ export function SettingsPage() {
         if (pending.editorFontSize !== undefined) settings.setEditorFontSize(pending.editorFontSize);
         if (pending.editorFontFamily !== undefined) settings.setEditorFontFamily(pending.editorFontFamily);
         if (pending.uiScale !== undefined) settings.setUIScale(pending.uiScale);
+        if (pending.sidebarNavigationMode !== undefined) settings.setSidebarNavigationMode(pending.sidebarNavigationMode);
+        if (pending.activityBarAlignment !== undefined) settings.setActivityBarAlignment(pending.activityBarAlignment);
         if (pending.providerType !== undefined) settings.setProviderType(pending.providerType);
         if (pending.openAIKey !== undefined) settings.setOpenAIKey(pending.openAIKey);
         if (pending.openAIBaseUrl !== undefined) settings.setOpenAIBaseUrl(pending.openAIBaseUrl);
@@ -174,10 +268,12 @@ export function SettingsPage() {
         if (pending.selectedProviderPresetId !== undefined) settings.setSelectedProviderPresetId(pending.selectedProviderPresetId);
         if (pending.inlineCompletionsEnabled !== undefined) settings.setInlineCompletionsEnabled(pending.inlineCompletionsEnabled);
         if (pending.chatContextWindow !== undefined) settings.setChatContextWindow(pending.chatContextWindow);
+        if (pending.persistentWorkspaceIndexEnabled !== undefined) settings.setPersistentWorkspaceIndexEnabled(pending.persistentWorkspaceIndexEnabled);
         if (pending.tabSize !== undefined) settings.setTabSize(pending.tabSize);
         if (pending.wordWrap !== undefined) settings.setWordWrap(pending.wordWrap);
         if (pending.lineNumbers !== undefined) settings.setLineNumbers(pending.lineNumbers);
         if (pending.minimap !== undefined) settings.setMinimap(pending.minimap);
+        if (pending.lspInstallProvider !== undefined) settings.setLspInstallProvider(pending.lspInstallProvider);
         if (pending.keybindings !== undefined) {
             pending.keybindings.forEach((kb) => {
                 settings.updateKeybinding(kb.id, kb);
@@ -194,6 +290,28 @@ export function SettingsPage() {
         setPending({});
         setHasChanges(false);
         closeSettingsPage();
+    };
+
+    const handleClearWorkspaceCache = async () => {
+        const confirmed = window.confirm(
+            "Clear the persisted workspace cache? The next workspace open may rebuild the index."
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        setIsClearingWorkspaceCache(true);
+        setWorkspaceCacheError(null);
+
+        try {
+            await invoke<ClearedWorkspaceIndexCache>("clear_workspace_index_cache");
+            const summary = await invoke<WorkspaceIndexCacheSummary>("get_workspace_index_cache_summary");
+            setWorkspaceCacheSummary(summary);
+        } catch (error) {
+            setWorkspaceCacheError(String(error));
+        } finally {
+            setIsClearingWorkspaceCache(false);
+        }
     };
 
     if (!isSettingsPageOpen) return null;
@@ -300,10 +418,14 @@ export function SettingsPage() {
                                 currentFontSize={getValue("editorFontSize", settings.editorFontSize)}
                                 currentFontFamily={getValue("editorFontFamily", settings.editorFontFamily)}
                                 currentUIScale={getValue("uiScale", settings.uiScale)}
+                                currentSidebarNavigationMode={getValue("sidebarNavigationMode", settings.sidebarNavigationMode)}
+                                currentActivityBarAlignment={getValue("activityBarAlignment", settings.activityBarAlignment)}
                                 onThemeChange={(v) => updatePending("theme", v)}
                                 onFontSizeChange={(v) => updatePending("editorFontSize", v)}
                                 onFontFamilyChange={(v) => updatePending("editorFontFamily", v)}
                                 onUIScaleChange={(v) => updatePending("uiScale", v)}
+                                onSidebarNavigationModeChange={(v) => updatePending("sidebarNavigationMode", v)}
+                                onActivityBarAlignmentChange={(v) => updatePending("activityBarAlignment", v)}
                             />
                         )}
                         {settingsCategory === "ai" && (
@@ -342,10 +464,31 @@ export function SettingsPage() {
                                 currentWordWrap={getValue("wordWrap", settings.wordWrap)}
                                 currentLineNumbers={getValue("lineNumbers", settings.lineNumbers)}
                                 currentMinimap={getValue("minimap", settings.minimap)}
+                                currentPersistentWorkspaceIndexEnabled={getValue("persistentWorkspaceIndexEnabled", settings.persistentWorkspaceIndexEnabled)}
+                                workspaceRootPath={rootPath}
+                                workspaceCacheSummary={workspaceCacheSummary}
+                                workspaceCacheError={workspaceCacheError}
+                                isWorkspaceCacheLoading={isWorkspaceCacheLoading}
+                                isClearingWorkspaceCache={isClearingWorkspaceCache}
                                 onTabSizeChange={(v) => updatePending("tabSize", v)}
                                 onWordWrapChange={(v) => updatePending("wordWrap", v)}
                                 onLineNumbersChange={(v) => updatePending("lineNumbers", v)}
                                 onMinimapChange={(v) => updatePending("minimap", v)}
+                                onPersistentWorkspaceIndexEnabledChange={(v) => updatePending("persistentWorkspaceIndexEnabled", v)}
+                                onClearWorkspaceCache={handleClearWorkspaceCache}
+                            />
+                        )}
+                        {settingsCategory === "extensions" && (
+                            <ExtensionsSettings
+                                currentInstallProvider={getValue("lspInstallProvider", settings.lspInstallProvider)}
+                                extensions={extensions}
+                                isLoading={isExtensionsLoading}
+                                installInFlightIds={installInFlightIds}
+                                onInstallProviderChange={(v) => updatePending("lspInstallProvider", v)}
+                                onInstall={(id, provider) => installExtension(id, provider)}
+                                onUpdate={(id, provider) => updateExtension(id, provider)}
+                                onUninstall={(id) => uninstallExtension(id)}
+                                onRefresh={refreshExtensions}
                             />
                         )}
                     </div>
@@ -430,10 +573,14 @@ interface AppearanceSettingsProps {
     currentFontSize: number;
     currentFontFamily: string;
     currentUIScale: number;
+    currentSidebarNavigationMode: SidebarNavigationMode;
+    currentActivityBarAlignment: ActivityBarAlignment;
     onThemeChange: (theme: Theme) => void;
     onFontSizeChange: (size: number) => void;
     onFontFamilyChange: (family: string) => void;
     onUIScaleChange: (scale: number) => void;
+    onSidebarNavigationModeChange: (mode: SidebarNavigationMode) => void;
+    onActivityBarAlignmentChange: (alignment: ActivityBarAlignment) => void;
 }
 
 function AppearanceSettings({
@@ -441,10 +588,14 @@ function AppearanceSettings({
     currentFontSize,
     currentFontFamily,
     currentUIScale,
+    currentSidebarNavigationMode,
+    currentActivityBarAlignment,
     onThemeChange,
     onFontSizeChange,
     onFontFamilyChange,
     onUIScaleChange,
+    onSidebarNavigationModeChange,
+    onActivityBarAlignmentChange,
 }: AppearanceSettingsProps) {
     return (
         <>
@@ -523,6 +674,56 @@ function AppearanceSettings({
                         />
                         <span className="text-sm text-[var(--color-text-secondary)] w-12">{currentUIScale}%</span>
                         <ZoomIn className="w-4 h-4 text-[var(--color-text-muted)]" />
+                    </div>
+                </SettingRow>
+
+                <SettingRow label="Sidebar Navigation Layout" description="Switch between the current integrated strip and a VS Code-style activity bar.">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onSidebarNavigationModeChange("integrated")}
+                            className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                                currentSidebarNavigationMode === "integrated"
+                                    ? "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)]"
+                                    : "bg-[var(--color-void-700)] text-[var(--color-text-secondary)]"
+                            }`}
+                        >
+                            Integrated
+                        </button>
+                        <button
+                            onClick={() => onSidebarNavigationModeChange("activity_bar")}
+                            className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                                currentSidebarNavigationMode === "activity_bar"
+                                    ? "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)]"
+                                    : "bg-[var(--color-void-700)] text-[var(--color-text-secondary)]"
+                            }`}
+                        >
+                            Activity Bar
+                        </button>
+                    </div>
+                </SettingRow>
+
+                <SettingRow label="Navigation Alignment" description="Choose whether the sidebar navigation icons sit near the top or lower down.">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onActivityBarAlignmentChange("top")}
+                            className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                                currentActivityBarAlignment === "top"
+                                    ? "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)]"
+                                    : "bg-[var(--color-void-700)] text-[var(--color-text-secondary)]"
+                            }`}
+                        >
+                            Top
+                        </button>
+                        <button
+                            onClick={() => onActivityBarAlignmentChange("bottom")}
+                            className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                                currentActivityBarAlignment === "bottom"
+                                    ? "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)]"
+                                    : "bg-[var(--color-void-700)] text-[var(--color-text-secondary)]"
+                            }`}
+                        >
+                            Bottom
+                        </button>
                     </div>
                 </SettingRow>
             </SettingSection>
@@ -1438,10 +1639,18 @@ interface EditorSettingsProps {
     currentWordWrap: boolean;
     currentLineNumbers: boolean;
     currentMinimap: boolean;
+    currentPersistentWorkspaceIndexEnabled: boolean;
+    workspaceRootPath: string | null;
+    workspaceCacheSummary: WorkspaceIndexCacheSummary | null;
+    workspaceCacheError: string | null;
+    isWorkspaceCacheLoading: boolean;
+    isClearingWorkspaceCache: boolean;
     onTabSizeChange: (size: number) => void;
     onWordWrapChange: (enabled: boolean) => void;
     onLineNumbersChange: (enabled: boolean) => void;
     onMinimapChange: (enabled: boolean) => void;
+    onPersistentWorkspaceIndexEnabledChange: (enabled: boolean) => void;
+    onClearWorkspaceCache: () => Promise<void>;
 }
 
 function EditorSettings({
@@ -1449,11 +1658,21 @@ function EditorSettings({
     currentWordWrap,
     currentLineNumbers,
     currentMinimap,
+    currentPersistentWorkspaceIndexEnabled,
+    workspaceRootPath,
+    workspaceCacheSummary,
+    workspaceCacheError,
+    isWorkspaceCacheLoading,
+    isClearingWorkspaceCache,
     onTabSizeChange,
     onWordWrapChange,
     onLineNumbersChange,
     onMinimapChange,
+    onPersistentWorkspaceIndexEnabledChange,
+    onClearWorkspaceCache,
 }: EditorSettingsProps) {
+    const cachedRoot = workspaceCacheSummary?.cached_roots.find((root) => root.root_path === workspaceRootPath) || null;
+
     return (
         <>
             <SettingSection title="Editor" description="Configure code editor behavior and appearance">
@@ -1486,7 +1705,270 @@ function EditorSettings({
                 <SettingRow label="Minimap" description="Show a minimap preview of the code on the right side">
                     <Toggle checked={currentMinimap} onChange={onMinimapChange} />
                 </SettingRow>
+
+                <SettingRow
+                    label="Persistent Workspace Index"
+                    description="Store workspace indexes on disk for faster reopen. Turn this off for tiny projects or low-RAM machines."
+                >
+                    <Toggle
+                        checked={currentPersistentWorkspaceIndexEnabled}
+                        onChange={onPersistentWorkspaceIndexEnabledChange}
+                    />
+                </SettingRow>
+            </SettingSection>
+
+            <SettingSection title="Workspace Cache" description="Persisted workspace indexes are stored on disk to speed up reopening projects.">
+                <div className="rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-void-850)] overflow-hidden">
+                    <div className="flex items-start justify-between gap-4 px-4 py-4 border-b border-[var(--color-border-subtle)]">
+                        <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-accent-primary)]/12 text-[var(--color-accent-primary)]">
+                                <Database className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-[var(--color-text-primary)]">Persistent workspace index</p>
+                                <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                                    {isWorkspaceCacheLoading
+                                        ? "Loading cache details..."
+                                        : workspaceCacheSummary
+                                            ? `${workspaceCacheSummary.workspace_count} cached workspace${workspaceCacheSummary.workspace_count === 1 ? "" : "s"} • ${formatBytes(workspaceCacheSummary.total_size_bytes)} on disk`
+                                            : "No workspace cache data available."}
+                                </p>
+                                {!currentPersistentWorkspaceIndexEnabled && (
+                                    <p className="text-xs text-[var(--color-accent-warning)] mt-2">
+                                        Persistence is currently disabled. Indexes stay in memory only for this session.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => void onClearWorkspaceCache()}
+                            disabled={isWorkspaceCacheLoading || isClearingWorkspaceCache || !workspaceCacheSummary || workspaceCacheSummary.workspace_count === 0}
+                            className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-700)] text-[var(--color-text-secondary)] hover:bg-[var(--color-void-600)] hover:text-[var(--color-text-primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isClearingWorkspaceCache ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            Clear Cache
+                        </button>
+                    </div>
+
+                    <div className="px-4 py-4 space-y-4">
+                        {workspaceCacheError && (
+                            <div className="rounded-lg border border-[var(--color-accent-error)]/30 bg-[var(--color-accent-error)]/10 px-3 py-3 text-xs text-[var(--color-text-secondary)]">
+                                {workspaceCacheError}
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-800)] px-3 py-3">
+                                <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Cached Workspaces</p>
+                                <p className="mt-2 text-lg font-semibold text-[var(--color-text-primary)]">{workspaceCacheSummary?.workspace_count ?? 0}</p>
+                            </div>
+                            <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-800)] px-3 py-3">
+                                <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Indexed Files</p>
+                                <p className="mt-2 text-lg font-semibold text-[var(--color-text-primary)]">{workspaceCacheSummary?.file_count ?? 0}</p>
+                            </div>
+                            <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-800)] px-3 py-3">
+                                <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Last Indexed</p>
+                                <p className="mt-2 text-sm font-medium text-[var(--color-text-primary)]">
+                                    {workspaceCacheSummary?.last_indexed_at ? formatTimestamp(workspaceCacheSummary.last_indexed_at) : "Never"}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-void-800)] px-4 py-3">
+                            <p className="text-sm font-medium text-[var(--color-text-primary)]">Current workspace</p>
+                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                                {workspaceRootPath || "No workspace currently open."}
+                            </p>
+                            {cachedRoot ? (
+                                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                                    Cached with {cachedRoot.file_count} files and {cachedRoot.directory_count} folders.
+                                </p>
+                            ) : workspaceRootPath ? (
+                                <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                                    This workspace is not cached on disk yet.
+                                </p>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
             </SettingSection>
         </>
     );
+}
+
+interface ExtensionsSettingsProps {
+    currentInstallProvider: LspInstallProvider;
+    extensions: {
+        id: string;
+        name: string;
+        description: string;
+        install_method: string;
+        installed: boolean;
+        installed_version?: string | null;
+        coming_soon: boolean;
+        version: string;
+        latest_version: string;
+        update_available: boolean;
+        install_source?: string | null;
+        executable_path?: string | null;
+        error?: string | null;
+    }[];
+    isLoading: boolean;
+    installInFlightIds: string[];
+    onInstallProviderChange: (provider: LspInstallProvider) => void;
+    onInstall: (id: string, provider: LspInstallProvider) => Promise<void>;
+    onUpdate: (id: string, provider: LspInstallProvider) => Promise<void>;
+    onUninstall: (id: string) => Promise<void>;
+    onRefresh: () => Promise<void>;
+}
+
+function ExtensionsSettings({
+    currentInstallProvider,
+    extensions,
+    isLoading,
+    installInFlightIds,
+    onInstallProviderChange,
+    onInstall,
+    onUpdate,
+    onUninstall,
+    onRefresh,
+}: ExtensionsSettingsProps) {
+    return (
+        <>
+            <SettingSection title="LSP Extensions" description="Manage built-in and marketplace language servers.">
+                <SettingRow label="Node Install Provider" description="Used for TypeScript and Pyright. Rust downloads from GitHub Releases.">
+                    <div className="flex items-center gap-2">
+                        {(["pnpm", "npm", "bun"] as const).map((provider) => (
+                            <button
+                                key={provider}
+                                onClick={() => provider !== "bun" && onInstallProviderChange(provider)}
+                                className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                                    currentInstallProvider === provider
+                                        ? "bg-[var(--color-accent-primary)] text-[var(--color-surface-base)]"
+                                        : "bg-[var(--color-void-700)] text-[var(--color-text-secondary)]"
+                                } ${provider === "bun" ? "opacity-60 cursor-not-allowed" : ""}`}
+                            >
+                                {provider === "bun" ? "bun (Soon)" : provider}
+                            </button>
+                        ))}
+                    </div>
+                </SettingRow>
+            </SettingSection>
+
+            <SettingSection title="Available Language Servers" description="Install and manage runtime support for each language.">
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                            {isLoading ? "Refreshing extension statuses..." : `${extensions.length} entries`}
+                        </span>
+                        <button
+                            onClick={() => void onRefresh()}
+                            className="px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]"
+                        >
+                            Refresh
+                        </button>
+                    </div>
+
+                    {extensions.map((extension) => {
+                        const installing = installInFlightIds.includes(extension.id);
+                        return (
+                            <div
+                                key={extension.id}
+                                className="rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-void-850)] px-4 py-4"
+                            >
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                                                {extension.name}
+                                            </p>
+                                            {extension.installed && (
+                                                <span className="text-[10px] uppercase tracking-widest text-[var(--color-accent-success)]">
+                                                    Installed
+                                                </span>
+                                            )}
+                                            {extension.update_available && (
+                                                <span className="text-[10px] uppercase tracking-widest text-[var(--color-accent-warning)]">
+                                                    Update Available
+                                                </span>
+                                            )}
+                                            {extension.coming_soon && (
+                                                <span className="text-[10px] uppercase tracking-widest text-[var(--color-accent-warning)]">
+                                                    Coming Soon
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                                            {extension.description}
+                                        </p>
+                                        <p className="mt-2 text-[11px] text-[var(--color-text-secondary)] font-mono">
+                                            {extension.install_method} • {extension.latest_version === "latest" ? "latest" : `latest ${extension.latest_version}`}
+                                            {extension.installed_version ? ` • installed ${extension.installed_version}` : ""}
+                                        </p>
+                                        <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                                            Source: {extension.install_source ?? "missing"}
+                                        </p>
+                                        {extension.error && (
+                                            <p className="mt-2 text-[11px] text-[var(--color-accent-error)]">
+                                                {extension.error}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {!extension.installed ? (
+                                            <button
+                                                onClick={() => void onInstall(extension.id, currentInstallProvider)}
+                                                disabled={installing || extension.coming_soon}
+                                                className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] disabled:opacity-50"
+                                            >
+                                                {installing ? "Installing..." : "Install"}
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => void onUpdate(extension.id, currentInstallProvider)}
+                                                    disabled={installing || extension.coming_soon}
+                                                    className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-accent-primary)] text-[var(--color-surface-base)] disabled:opacity-50"
+                                                >
+                                                    {installing ? "Working..." : extension.update_available ? "Update" : "Reinstall"}
+                                                </button>
+                                                <button
+                                                    onClick={() => void onUninstall(extension.id)}
+                                                    disabled={installing}
+                                                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] disabled:opacity-50"
+                                                >
+                                                    Uninstall
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </SettingSection>
+        </>
+    );
+}
+
+function formatBytes(bytes: number) {
+    if (bytes <= 0) {
+        return "0 B";
+    }
+
+    const units = ["B", "KB", "MB", "GB"];
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+
+    return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatTimestamp(timestamp: number) {
+    return new Date(timestamp).toLocaleString();
 }

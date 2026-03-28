@@ -1,0 +1,26 @@
+Verdict
+  It’s not bad. It’s a serious, ambitious AI-first IDE prototype with real depth. It is not polished enough to compete with VS Code today, but it does have real potential if the focus stays narrow and execution gets tighter.
+
+  Scorecard
+
+  - Vision / differentiation: 8.5/10 - Clear identity: native, AI-heavy, workspace-aware IDE.
+  - Feature depth: 8/10 - File tree, editor, terminal, search, AI chat, LSP, sessions, attachments, file watching.
+  - AI integration: 8/10 - This is the strongest part; the agent/tooling is meaningfully integrated, not just bolted on.
+  - Editor core: 7/10 - Solid foundation with CodeMirror, completion, hover, ghost text, but still far from VS Code-level maturity.
+  - Terminal / workspace tooling: 7.5/10 - Good inclusion, useful for real work, but not yet a flagship differentiator.
+  - UX polish: 5.5/10 - Functional, but there are rough edges and some “builder mode” feel.
+  - Code quality / maintainability: 5.5/10 - There are a lot of anys, console.logs, and signs of active development rather than finished product quality. You can see that in files like CodeEditor.tsx, useAI.ts, and useLsp.ts.
+  - Readiness to replace VS Code: 3.5/10 - Too early for general-purpose replacement.
+
+  Average score: 6.7/10
+
+  Main downsides
+
+  - It looks like an advanced product, but it still behaves like an evolving internal project in places.
+  - The editor and AI systems are impressive, but the app likely lacks the huge ecosystem, stability, and UX refinement VS Code has.
+  - There are signs of unfinished work and operational roughness, especially around logging, typing discipline, and polished edge-case handling.
+  - Some core “must-have IDE” features are still missing or explicitly planned, like diagnostics, go-to-definition, references, and broader project tooling.
+
+  Does it have potential?
+  Yes. The strongest path is not beating VS Code head-on as a general editor. The better play is becoming a best-in-class AI-native IDE for a narrower audience: people who want the editor, terminal, file ops, and agentic AI all in one
+  place. If the team improves reliability, removes rough edges, and keeps the AI workflow genuinely useful, it could become compelling.

@@ -1,0 +1,57 @@
+[
+    {
+        "id": "typescript-language-server",
+        "name": "TypeScript Language Server",
+        "language_ids": ["typescript", "javascript"],
+        "file_extensions": ["ts", "tsx", "js", "jsx", "mjs", "cjs"],
+        "install_method": "pnpm",
+        "version": "latest",
+        "package_name": "typescript-language-server",
+        "additional_packages": ["typescript"],
+        "executable": "typescript-language-server",
+        "args": ["--stdio"],
+        "bundled_by_default": true,
+        "coming_soon": false,
+        "description": "Managed TypeScript and JavaScript language intelligence."
+    },
+    {
+        "id": "pyright",
+        "name": "Pyright",
+        "language_ids": ["python"],
+        "file_extensions": ["py", "pyi", "pyw"],
+        "install_method": "pnpm",
+        "version": "latest",
+        "package_name": "pyright",
+        "additional_packages": [],
+        "executable": "pyright-langserver",
+        "args": ["--stdio"],
+        "bundled_by_default": true,
+        "coming_soon": false,
+        "description": "Managed Python type checking and language service."
+    },
+    {
+        "id": "rust-analyzer",
+        "name": "Rust Analyzer",
+        "language_ids": ["rust"],
+        "file_extensions": ["rs"],
+        "install_method": "github_release",
+        "version": "latest",
+        "executable": "rust-analyzer.exe",
+        "args": [],
+        "github_release_url_windows_x64": "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-pc-windows-msvc.zip",
+        "bundled_by_default": true,
+        "coming_soon": false,
+        "description": "Managed Rust language intelligence from rust-analyzer releases."
+    },
+    {
+        "id": "gopls",
+        "name": "Go Language Server",
+        "language_ids": ["go"],
+        "file_extensions": ["go"],
+        "install_method": "github_release",
+        "version": "coming-soon",
+        "bundled_by_default": false,
+        "coming_soon": true,
+        "description": "Planned marketplace entry for Go support."
+    }
+]

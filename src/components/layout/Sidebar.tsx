@@ -5,6 +5,9 @@ import { useFileStore, FileNode } from "@/stores/fileStore";
 import { useFileSystem } from "@/hooks/useFileSystem";
 import { useUIStore } from "@/stores/uiStore";
 import { SearchPanel } from "@/components/search/SearchPanel";
+import { ProblemsPanel } from "@/components/problems/ProblemsPanel";
+import { SymbolsPanel } from "@/components/navigation/SymbolsPanel";
+import { SidebarNav } from "./SidebarNav";
 import {
     FolderOpen,
     FolderPlus,
@@ -15,6 +18,7 @@ import {
     Clock,
     Trash2,
 } from "lucide-react";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function Sidebar() {
     const { fileTree, rootPath, draggedPaths, clearDraggedPaths, recentProjects, removeRecentProject, clearRecentProjects } = useFileStore(
@@ -37,15 +41,16 @@ export function Sidebar() {
         batchMoveFiles,
         openFolderAt,
     } = useFileSystem();
-    const { sidebarView, setSidebarView } = useUIStore(
+    const { sidebarView } = useUIStore(
         useShallow((state) => ({
             sidebarView: state.sidebarView,
-            setSidebarView: state.setSidebarView,
         }))
     );
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [isRootDragOver, setIsRootDragOver] = useState(false);
+    const sidebarNavigationMode = useSettingsStore((state) => state.sidebarNavigationMode);
+    const activityBarAlignment = useSettingsStore((state) => state.activityBarAlignment);
 
     const handleOpenRecentProject = async (path: string) => {
         setIsLoading(true);
@@ -184,40 +189,42 @@ export function Sidebar() {
 
     return (
         <div className="flex flex-col h-full">
-            {/* Header with view switcher */}
-            <div className="panel-header">
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={() => setSidebarView("explorer")}
-                        className={`icon-btn ${sidebarView === "explorer" ? "text-[var(--color-text-primary)] bg-[var(--color-void-700)]" : ""}`}
-                        title="Explorer"
-                    >
-                        <FolderOpen className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        onClick={() => setSidebarView("search")}
-                        className={`icon-btn ${sidebarView === "search" ? "text-[var(--color-text-primary)] bg-[var(--color-void-700)]" : ""}`}
-                        title="Search (Ctrl+Shift+F)"
-                    >
-                        <Search className="w-3.5 h-3.5" />
-                    </button>
+            {sidebarNavigationMode === "integrated" && activityBarAlignment === "top" && (
+                <div className="panel-header">
+                    <SidebarNav mode="integrated" alignment={activityBarAlignment} />
+                    <div className="flex items-center gap-1">
+                        {sidebarView === "explorer" && hasProject && (
+                            <>
+                                <button onClick={handleNewFile} className="icon-btn" title="New File">
+                                    <FilePlus className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={handleNewFolder} className="icon-btn" title="New Folder">
+                                    <FolderPlus className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={handleRefresh} className="icon-btn" title="Refresh" disabled={isLoading}>
+                                    <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                                </button>
+                            </>
+                        )}
+                    </div>
                 </div>
-                <div className="flex items-center gap-1">
-                    {sidebarView === "explorer" && hasProject && (
-                        <>
-                            <button onClick={handleNewFile} className="icon-btn" title="New File">
-                                <FilePlus className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={handleNewFolder} className="icon-btn" title="New Folder">
-                                <FolderPlus className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={handleRefresh} className="icon-btn" title="Refresh" disabled={isLoading}>
-                                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-                            </button>
-                        </>
-                    )}
+            )}
+            {!(sidebarNavigationMode === "integrated" && activityBarAlignment === "top") && sidebarView === "explorer" && hasProject && (
+                <div className="panel-header">
+                    <div />
+                    <div className="flex items-center gap-1">
+                        <button onClick={handleNewFile} className="icon-btn" title="New File">
+                            <FilePlus className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={handleNewFolder} className="icon-btn" title="New Folder">
+                            <FolderPlus className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={handleRefresh} className="icon-btn" title="Refresh" disabled={isLoading}>
+                            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {sidebarView === "explorer" ? (
                 <>
@@ -323,8 +330,18 @@ export function Sidebar() {
                         </div>
                     )}
                 </>
-            ) : (
+            ) : sidebarView === "search" ? (
                 <SearchPanel />
+            ) : sidebarView === "problems" ? (
+                <ProblemsPanel />
+            ) : (
+                <SymbolsPanel />
+            )}
+            {sidebarNavigationMode === "integrated" && activityBarAlignment === "bottom" && (
+                <div className="panel-header border-t border-[var(--color-border-subtle)]">
+                    <SidebarNav mode="integrated" alignment={activityBarAlignment} />
+                    <div className="w-8" />
+                </div>
             )}
         </div>
     );

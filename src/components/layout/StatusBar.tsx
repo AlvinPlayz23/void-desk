@@ -1,5 +1,7 @@
 import { useFileStore } from "@/stores/fileStore";
 import { useEditorStore } from "@/stores/editorStore";
+import { useDiagnosticsStore } from "@/stores/diagnosticsStore";
+import { useUIStore } from "@/stores/uiStore";
 import { useShallow } from "zustand/react/shallow";
 import {
     GitBranch,
@@ -22,8 +24,14 @@ export function StatusBar() {
             cursorColumn: state.cursorColumn,
         }))
     );
+    const diagnosticsByPath = useDiagnosticsStore((state) => state.diagnosticsByPath);
+    const openSidebar = useUIStore((state) => state.openSidebar);
+    const setSidebarView = useUIStore((state) => state.setSidebarView);
 
     const currentFile = openFiles.find((f) => f.path === currentFilePath);
+    const diagnostics = Object.values(diagnosticsByPath).flat();
+    const errorCount = diagnostics.filter((diagnostic) => diagnostic.severity === 1).length;
+    const warningCount = diagnostics.filter((diagnostic) => diagnostic.severity === 2).length;
 
     return (
         <div className="status-bar">
@@ -41,11 +49,17 @@ export function StatusBar() {
                 </div>
 
                 {/* Errors & Warnings */}
-                <div className="status-item cursor-pointer hover:bg-[var(--color-void-800)]">
+                <div
+                    className="status-item cursor-pointer hover:bg-[var(--color-void-800)]"
+                    onClick={() => {
+                        openSidebar();
+                        setSidebarView("problems");
+                    }}
+                >
                     <AlertCircle className="w-3 h-3" />
-                    <span>0</span>
+                    <span>{errorCount}</span>
                     <AlertTriangle className="w-3 h-3 ml-1" />
-                    <span>0</span>
+                    <span>{warningCount}</span>
                 </div>
             </div>
 

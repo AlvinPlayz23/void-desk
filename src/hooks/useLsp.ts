@@ -20,6 +20,23 @@ interface HoverInfo {
     };
 }
 
+interface LspLocation {
+    path: string;
+    range: {
+        start: { line: number; character: number };
+        end: { line: number; character: number };
+    };
+}
+
+interface RenameResult {
+    files: string[];
+    edits: {
+        path: string;
+        range: LspLocation["range"];
+        new_text: string;
+    }[];
+}
+
 // DiagnosticInfo will be used in Phase 2 for error squiggles
 // interface DiagnosticInfo {
 //     range: {
@@ -47,12 +64,12 @@ function getLanguageFromPath(path: string): string {
 
 export function useLsp() {
     const rootPath = useFileStore((state) => state.rootPath);
-    const initializedRef = useRef(false);
+    const initializedRootRef = useRef<string | null>(null);
 
     // Initialize LSP when workspace opens
     useEffect(() => {
-        if (rootPath && !initializedRef.current) {
-            initializedRef.current = true;
+        if (rootPath && initializedRootRef.current !== rootPath) {
+            initializedRootRef.current = rootPath;
             console.log("[LSP] Setting root path:", rootPath);
             invoke("lsp_set_root", { rootPath })
                 .then(() => console.log("[LSP] Root path set successfully"))
@@ -161,10 +178,79 @@ export function useLsp() {
         []
     );
 
+    const getDefinition = useCallback(
+        async (path: string, line: number, character: number): Promise<LspLocation[]> => {
+            const language = getLanguageFromPath(path);
+            if (language === "plaintext") return [];
+
+            try {
+                return await invoke<LspLocation[]>("lsp_definition", {
+                    path,
+                    line,
+                    character,
+                    language,
+                });
+            } catch (err) {
+                console.error("[LSP] definition failed:", err);
+                return [];
+            }
+        },
+        []
+    );
+
+    const getReferences = useCallback(
+        async (path: string, line: number, character: number): Promise<LspLocation[]> => {
+            const language = getLanguageFromPath(path);
+            if (language === "plaintext") return [];
+
+            try {
+                return await invoke<LspLocation[]>("lsp_references", {
+                    path,
+                    line,
+                    character,
+                    language,
+                });
+            } catch (err) {
+                console.error("[LSP] references failed:", err);
+                return [];
+            }
+        },
+        []
+    );
+
+    const renameSymbol = useCallback(
+        async (
+            path: string,
+            line: number,
+            character: number,
+            newName: string
+        ): Promise<RenameResult | null> => {
+            const language = getLanguageFromPath(path);
+            if (language === "plaintext") return null;
+
+            try {
+                return await invoke<RenameResult>("lsp_rename", {
+                    path,
+                    line,
+                    character,
+                    language,
+                    newName,
+                });
+            } catch (err) {
+                console.error("[LSP] rename failed:", err);
+                return null;
+            }
+        },
+        []
+    );
+
     return {
         didOpen,
         didChange,
         getCompletions,
         getHover,
+        getDefinition,
+        getReferences,
+        renameSymbol,
     };
 }

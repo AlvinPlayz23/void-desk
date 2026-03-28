@@ -15,23 +15,29 @@ use commands::codex_auth;
 use commands::file_commands;
 use commands::file_watcher;
 use commands::lsp_commands;
+use commands::lsp_runtime;
 use commands::project_commands;
 use commands::search_commands;
+use commands::workspace_index;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_setup::init_logging();
     tauri::Builder::default()
         .manage(terminal::TerminalState::new())
-        .manage(lsp_commands::LspState::new())
         .setup(|app| {
             let chat_storage_state = chat_storage::ChatStorageState::new(app.handle())?;
             let ai_service_state =
                 ai_service::AIService::from_db_path(chat_storage_state.db_path().to_path_buf())?;
             let codex_auth_state = codex_auth::CodexAuthState::new(app.handle())?;
+            let lsp_state = lsp_commands::LspState::new();
+            workspace_index::initialize_persistence(chat_storage_state.db_path().to_path_buf())
+                .map_err(anyhow::Error::msg)?;
+            tauri::async_runtime::block_on(lsp_state.manager.set_app_handle(app.handle().clone()));
             app.manage(chat_storage_state);
             app.manage(ai_service_state);
             app.manage(codex_auth_state);
+            app.manage(lsp_state);
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -50,6 +56,11 @@ pub fn run() {
             // Project operations
             project_commands::list_directory,
             project_commands::get_project_tree,
+            workspace_index::rebuild_workspace_index,
+            workspace_index::get_workspace_index_stats,
+            workspace_index::get_workspace_index_cache_summary,
+            workspace_index::clear_workspace_index_cache,
+            workspace_index::set_workspace_index_persistence_enabled,
             // AI operations
             ai_commands::ask_ai_stream,
             ai_commands::ask_ai_stream_with_session,
@@ -91,6 +102,15 @@ pub fn run() {
             lsp_commands::lsp_did_change,
             lsp_commands::lsp_completion,
             lsp_commands::lsp_hover,
+            lsp_commands::lsp_list_diagnostics,
+            lsp_commands::lsp_definition,
+            lsp_commands::lsp_references,
+            lsp_commands::lsp_rename,
+            lsp_runtime::lsp_list_extensions,
+            lsp_runtime::lsp_ensure_default_extensions,
+            lsp_runtime::lsp_install_extension,
+            lsp_runtime::lsp_update_extension,
+            lsp_runtime::lsp_uninstall_extension,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -101,23 +101,28 @@ pub async fn batch_move_files(
 /// Linux: opens the parent directory with xdg-open
 #[tauri::command]
 pub async fn reveal_in_file_explorer(path: String) -> Result<(), String> {
-    let path = Path::new(&path);
+    let path = fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    let path = path.as_path();
 
     if !path.exists() {
         return Err("Path does not exist".to_string());
     }
 
     let result = if cfg!(target_os = "windows") {
-        // Windows: use explorer /select, to select the file
-        let parent = if path.is_file() {
-            path.to_string_lossy().to_string()
+        // Explorer is picky here. Use a canonical Windows path and select files explicitly.
+        let windows_path = path.to_string_lossy().replace('/', "\\");
+        if path.is_file() {
+            Command::new("explorer")
+                .arg("/select,")
+                .arg(&windows_path)
+                .spawn()
+                .map_err(|e| e.to_string())?;
         } else {
-            path.to_string_lossy().to_string()
-        };
-        Command::new("explorer")
-            .args(["/select,", &parent])
-            .spawn()
-            .map_err(|e| e.to_string())?;
+            Command::new("explorer")
+                .arg(&windows_path)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     } else if cfg!(target_os = "macos") {
         // macOS: use open -R to reveal in Finder

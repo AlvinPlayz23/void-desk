@@ -8,5 +8,7 @@ pub mod codex_auth;
 pub mod file_commands;
 pub mod file_watcher;
 pub mod lsp_commands;
+pub mod lsp_runtime;
 pub mod project_commands;
 pub mod search_commands;
+pub mod workspace_index;

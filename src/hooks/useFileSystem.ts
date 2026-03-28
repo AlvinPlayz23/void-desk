@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useShallow } from "zustand/react/shallow";
 import { FileNode, useFileStore } from "@/stores/fileStore";
+import { useEditorStore } from "@/stores/editorStore";
+import { normalizePath, pathsEqual } from "@/utils/path";
 
 interface FileEntry {
     path: string;
@@ -19,7 +21,7 @@ interface TauriFileNode {
 // Convert Tauri response to our FileNode format
 function convertToFileNode(node: TauriFileNode): FileNode {
     return {
-        path: node.path,
+        path: normalizePath(node.path),
         name: node.name,
         isDir: node.is_dir,
         isExpanded: false,
@@ -28,11 +30,12 @@ function convertToFileNode(node: TauriFileNode): FileNode {
 }
 
 export function useFileSystem() {
-    const { setRootPath, setFileTree, openFile, rootPath } = useFileStore(
+    const { setRootPath, setFileTree, openFile, replaceFileContent, rootPath } = useFileStore(
         useShallow((state) => ({
             setRootPath: state.setRootPath,
             setFileTree: state.setFileTree,
             openFile: state.openFile,
+            replaceFileContent: state.replaceFileContent,
             rootPath: state.rootPath,
         }))
     );
@@ -47,10 +50,11 @@ export function useFileSystem() {
             });
 
             if (selected && typeof selected === "string") {
-                setRootPath(selected);
-                await refreshFileTree(selected);
-                useFileStore.getState().addRecentProject(selected);
-                return selected;
+                const normalizedSelected = normalizePath(selected);
+                setRootPath(normalizedSelected);
+                await refreshFileTree(normalizedSelected);
+                useFileStore.getState().addRecentProject(normalizedSelected);
+                return normalizedSelected;
             }
             return null;
         } catch (error) {
@@ -61,9 +65,10 @@ export function useFileSystem() {
 
     const openFolderAt = async (path: string): Promise<boolean> => {
         try {
-            setRootPath(path);
-            await refreshFileTree(path);
-            useFileStore.getState().addRecentProject(path);
+            const normalizedPath = normalizePath(path);
+            setRootPath(normalizedPath);
+            await refreshFileTree(normalizedPath);
+            useFileStore.getState().addRecentProject(normalizedPath);
             return true;
         } catch (error) {
             console.error("Failed to open folder:", error);
@@ -75,11 +80,11 @@ export function useFileSystem() {
     const refreshFileTree = async (path: string): Promise<void> => {
         try {
             const tree = await invoke<TauriFileNode[]>("get_project_tree", {
-                path,
+                path: normalizePath(path),
                 maxDepth: 5,
             });
 
-            if (useFileStore.getState().rootPath !== path) {
+            if (!pathsEqual(useFileStore.getState().rootPath, path)) {
                 return;
             }
 
@@ -110,7 +115,7 @@ export function useFileSystem() {
     // Read file contents
     const readFile = async (path: string): Promise<string | null> => {
         try {
-            return await invoke<string>("read_file", { path });
+            return await invoke<string>("read_file", { path: normalizePath(path) });
         } catch (error) {
             console.error("Failed to read file:", error);
             return null;
@@ -120,7 +125,7 @@ export function useFileSystem() {
     // Write file contents
     const writeFile = async (path: string, content: string): Promise<boolean> => {
         try {
-            await invoke("write_file", { path, content });
+            await invoke("write_file", { path: normalizePath(path), content });
             await refreshCurrentFileTree();
             return true;
         } catch (error) {
@@ -132,7 +137,7 @@ export function useFileSystem() {
     // Delete file or directory
     const deleteFile = async (path: string): Promise<boolean> => {
         try {
-            await invoke("delete_file", { path });
+            await invoke("delete_file", { path: normalizePath(path) });
             await refreshCurrentFileTree();
             return true;
         } catch (error) {
@@ -144,7 +149,7 @@ export function useFileSystem() {
     // Reveal file or folder in system file explorer
     const revealInExplorer = async (path: string): Promise<boolean> => {
         try {
-            await invoke("reveal_in_file_explorer", { path });
+            await invoke("reveal_in_file_explorer", { path: normalizePath(path) });
             return true;
         } catch (error) {
             console.error("Failed to reveal in explorer:", error);
@@ -154,15 +159,53 @@ export function useFileSystem() {
 
     // Open a file in the editor
     const openFileInEditor = async (path: string, name: string): Promise<void> => {
-        const content = await readFile(path);
+        const normalizedPath = normalizePath(path);
+        const existingFile = useFileStore
+            .getState()
+            .openFiles.find((file) => pathsEqual(file.path, normalizedPath));
+        const resolvedPath = existingFile?.path || normalizedPath;
+        const content = await readFile(resolvedPath);
         if (content !== null) {
             openFile({
-                path,
+                path: resolvedPath,
                 name,
                 content,
                 isDirty: false,
                 language: getLanguageFromFilename(name),
             });
+        }
+    };
+
+    const openFileAtLocation = async (
+        path: string,
+        name: string,
+        line: number,
+        column: number,
+        endLine?: number,
+        endColumn?: number
+    ): Promise<void> => {
+        const normalizedPath = normalizePath(path);
+        const existingFile = useFileStore
+            .getState()
+            .openFiles.find((file) => pathsEqual(file.path, normalizedPath));
+        const resolvedPath = existingFile?.path || normalizedPath;
+        await openFileInEditor(resolvedPath, name);
+        useEditorStore.getState().navigateTo({
+            path: resolvedPath,
+            line,
+            column,
+            endLine,
+            endColumn,
+        });
+    };
+
+    const reloadOpenFile = async (path: string): Promise<void> => {
+        const resolvedPath =
+            useFileStore.getState().openFiles.find((file) => pathsEqual(file.path, path))?.path ||
+            normalizePath(path);
+        const content = await readFile(resolvedPath);
+        if (content !== null) {
+            replaceFileContent(resolvedPath, content, false);
         }
     };
 
@@ -177,14 +220,14 @@ export function useFileSystem() {
 
     // Create a new file
     const createNewFile = async (parentPath: string, fileName: string): Promise<boolean> => {
-        const filePath = `${parentPath}/${fileName}`;
+        const filePath = normalizePath(`${parentPath}/${fileName}`);
         return await writeFile(filePath, "");
     };
 
     // Create a new folder
     const createNewFolder = async (parentPath: string, folderName: string): Promise<boolean> => {
         try {
-            await invoke("create_directory", { path: `${parentPath}/${folderName}` });
+            await invoke("create_directory", { path: normalizePath(`${parentPath}/${folderName}`) });
             await refreshCurrentFileTree();
             return true;
         } catch (error) {
@@ -195,7 +238,7 @@ export function useFileSystem() {
 
     const moveItem = async (fromPath: string, toPath: string): Promise<boolean> => {
         try {
-            await invoke("move_file", { from: fromPath, to: toPath });
+            await invoke("move_file", { from: normalizePath(fromPath), to: normalizePath(toPath) });
             await refreshCurrentFileTree();
             return true;
         } catch (error) {
@@ -206,7 +249,7 @@ export function useFileSystem() {
 
     const renameFile = async (oldPath: string, newPath: string): Promise<boolean> => {
         try {
-            await invoke("rename_file", { oldPath, newPath });
+            await invoke("rename_file", { oldPath: normalizePath(oldPath), newPath: normalizePath(newPath) });
             await refreshCurrentFileTree();
             return true;
         } catch (error) {
@@ -223,7 +266,9 @@ export function useFileSystem() {
 
     const batchDeleteFiles = async (paths: string[]): Promise<BatchOperationResult[]> => {
         try {
-            const results = await invoke<BatchOperationResult[]>("batch_delete_files", { paths });
+            const results = await invoke<BatchOperationResult[]>("batch_delete_files", {
+                paths: paths.map(normalizePath),
+            });
             await refreshCurrentFileTree();
             return results;
         } catch (error) {
@@ -243,7 +288,12 @@ export function useFileSystem() {
 
     const batchMoveFiles = async (operations: BatchMoveOperation[]): Promise<BatchOperationResult[]> => {
         try {
-            const results = await invoke<BatchOperationResult[]>("batch_move_files", { operations });
+            const results = await invoke<BatchOperationResult[]>("batch_move_files", {
+                operations: operations.map((op) => ({
+                    from: normalizePath(op.from),
+                    to: normalizePath(op.to),
+                })),
+            });
             await refreshCurrentFileTree();
             return results;
         } catch (error) {
@@ -271,6 +321,8 @@ export function useFileSystem() {
         batchMoveFiles,
         revealInExplorer,
         openFileInEditor,
+        openFileAtLocation,
+        reloadOpenFile,
         saveFile,
         createNewFile,
         createNewFolder,

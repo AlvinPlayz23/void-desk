@@ -94,6 +94,18 @@ pub fn create_hover_params(path: &str, line: u32, character: u32) -> Result<Valu
 
     serde_json::to_value(params).map_err(|e| e.to_string())
 }
+
+/// Create definition params
+pub fn create_definition_params(path: &str, line: u32, character: u32) -> Result<Value, String> {
+    let uri = path_to_uri(path)?;
+
+    let params = TextDocumentPositionParams {
+        text_document: TextDocumentIdentifier { uri },
+        position: Position { line, character },
+    };
+
+    serde_json::to_value(params).map_err(|e| e.to_string())
+}
 /// Create didChange params (full content sync for simplicity)
 pub fn create_did_change_params(path: &str, content: &str, version: i32) -> Result<Value, String> {
     let uri = path_to_uri(path)?;

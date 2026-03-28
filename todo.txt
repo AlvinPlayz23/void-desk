@@ -7,14 +7,9 @@ the attachment code i think iss like a bit too much..workarounds, clean it but f
 
 
 d&d still not working
-@ fixed but when message sent there is no ui showing that context is added...
 started and complete tool indicator 
 improve ui for autocomplete(if possible only) and hover
 give context to tab iniline compilition..
-
-give context to session thingy
-
-feature log for the new settings page..
 
 IMP----
 revert the things done in feature-logs/2026-01-29.md

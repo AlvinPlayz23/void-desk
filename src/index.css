@@ -488,10 +488,17 @@ body {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
+  background: var(--editor-bg, var(--color-surface-base));
+  color: var(--color-text-primary);
 }
 
 .cm-editor .cm-scroller {
   overflow: auto;
+  background: var(--editor-bg, var(--color-surface-base));
+}
+
+.cm-editor .cm-content {
+  background: transparent;
 }
 
 .cm-editor .cm-gutters {
@@ -572,6 +579,113 @@ body {
 
 .cm-search button:hover {
   background: var(--color-void-700) !important;
+}
+
+.cm-diagnostic-range {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+.cm-diagnostic-range-error {
+  text-decoration-color: var(--color-accent-error);
+}
+
+.cm-diagnostic-range-warning {
+  text-decoration-color: var(--color-accent-warning);
+}
+
+.cm-diagnostic-range-info,
+.cm-diagnostic-range-hint {
+  text-decoration-color: var(--color-accent-info);
+}
+
+.cm-diagnostics-gutter .cm-gutterElement {
+  padding-left: 5px;
+}
+
+.cm-diagnostic-marker {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  margin-top: 6px;
+  opacity: 0.95;
+}
+
+.cm-diagnostic-marker-error {
+  background: var(--color-accent-error);
+}
+
+.cm-diagnostic-marker-warning {
+  background: var(--color-accent-warning);
+}
+
+.cm-diagnostic-marker-info {
+  background: var(--color-accent-info);
+}
+
+.cm-diagnostic-marker-hint {
+  background: var(--color-void-400);
+}
+
+.lsp-diagnostics-tooltip {
+  max-width: 420px;
+  padding: 8px 10px;
+  background: var(--color-void-800);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+}
+
+.lsp-diagnostics-tooltip-item + .lsp-diagnostics-tooltip-item {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.lsp-diagnostics-tooltip-message {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  line-height: 1.45;
+}
+
+.lsp-diagnostics-tooltip-meta {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.lsp-diagnostics-tooltip-item-error .lsp-diagnostics-tooltip-message {
+  color: #ffc7c7;
+}
+
+.lsp-diagnostics-tooltip-item-warning .lsp-diagnostics-tooltip-message {
+  color: #ffe2a8;
+}
+
+.lsp-diagnostics-tooltip-item-info .lsp-diagnostics-tooltip-message,
+.lsp-diagnostics-tooltip-item-hint .lsp-diagnostics-tooltip-message {
+  color: #b5f0ff;
+}
+
+.cm-navigation-flash {
+  animation: navigation-flash 1.35s ease-out;
+}
+
+@keyframes navigation-flash {
+  0% {
+    background: rgb(99 102 241 / 0.3);
+  }
+
+  45% {
+    background: rgb(99 102 241 / 0.14);
+  }
+
+  100% {
+    background: transparent;
+  }
 }
 
 .cm-search button[name="close"] {

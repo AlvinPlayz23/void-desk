@@ -119,11 +119,6 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
         }
     };
 
-    const handleDropDebug = async (e: React.DragEvent) => {
-        console.log("Drop event fired on:", node.path, "isDir:", node.isDir);
-        await handleDrop(e);
-    };
-
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -351,10 +346,10 @@ export function FileItem({ node, depth, onClick }: FileItemProps) {
                 draggable
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
-                onDragEnter={handleDragEnter}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDropDebug}
+                onDragEnter={node.isDir ? handleDragEnter : undefined}
+                onDragOver={node.isDir ? handleDragOver : undefined}
+                onDragLeave={node.isDir ? handleDragLeave : undefined}
+                onDrop={node.isDir ? handleDrop : undefined}
                 onClick={(e) => {
                     if (e.shiftKey && lastSelectedPath) {
                         selectRange(node.path);
